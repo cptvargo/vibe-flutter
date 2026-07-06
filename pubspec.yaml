@@ -1,0 +1,55 @@
+name: vibe
+description: Vibe — Jellyfin music player
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── Audio engine (same stack as Finamp) ─────────────────────────────────────
+  just_audio: ^0.10.0
+  just_audio_windows: ^0.2.0   # Windows platform impl (WinRT, compatible with SDK 26100)
+  audio_service: ^0.18.16
+  audio_session: ^0.1.21
+
+  # ── Color extraction + persistent cache ─────────────────────────────────────
+  palette_generator: ^0.3.3
+  hive_flutter: ^1.1.0
+
+  # ── UI + navigation ──────────────────────────────────────────────────────────
+  go_router: ^15.0.0
+  flutter_riverpod: ^2.6.1
+  cached_network_image: ^3.4.1
+  flutter_blurhash: ^0.9.1
+
+  # ── HTTP + data ──────────────────────────────────────────────────────────────
+  http: ^1.2.2
+  shared_preferences: ^2.3.3
+
+  # ── Utilities ────────────────────────────────────────────────────────────────
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.12
+  flutter_launcher_icons: ^0.14.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/
+    - assets/artists/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true

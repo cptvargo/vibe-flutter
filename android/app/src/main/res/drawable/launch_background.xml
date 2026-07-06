@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Solid black — no white flash when the app cold-starts -->
+    <item android:drawable="@android:color/black" />
+</layer-list>
