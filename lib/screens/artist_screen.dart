@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
-import '../config/artist_images.dart';
 import '../providers.dart';
 import '../widgets/mini_player.dart';
 
@@ -65,8 +64,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     final topPad    = MediaQuery.of(context).padding.top;
     final heroH  = 480.0;
     final cardW  = (screenW - 32 - 12) / 2;   // 2 columns, 12px gap
-    final localAsset = kArtistImages[widget.artistName];
-    final artUrl     = JellyfinApi.imageUrl(widget.artistId, size: 600);
+    final artUrl = JellyfinApi.imageUrl(widget.artistId, size: 600);
 
     return Scaffold(
       backgroundColor: theme.background,
@@ -80,21 +78,16 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
               height: heroH,
               child: Stack(
                 children: [
-                  // Hero image — local asset preferred, remote fallback
+                  // Hero image
                   Positioned(
                     top: 0, left: 0, right: 0,
                     height: screenW,
-                    child: localAsset != null
-                        ? Image.asset(localAsset, fit: BoxFit.cover,
-                            width: double.infinity, height: screenW)
-                        : CachedNetworkImage(
-                            imageUrl: artUrl,
-                            fit: BoxFit.cover,
-                            placeholder: (_, _) =>
-                                Container(color: theme.surface),
-                            errorWidget: (_, _, _) =>
-                                Container(color: theme.surface),
-                          ),
+                    child: CachedNetworkImage(
+                      imageUrl: artUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, _) => Container(color: theme.surface),
+                      errorWidget: (_, _, _) => Container(color: theme.surface),
+                    ),
                   ),
 
                   // Gradient overlay: transparent â†’ semi-dark â†’ background

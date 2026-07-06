@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
-import '../config/artist_images.dart';
 import '../providers.dart';
+import '../widgets/artist_avatar.dart';
 import '../theme/vibe_theme.dart';
 
 class MixPickerScreen extends ConsumerStatefulWidget {
@@ -203,19 +203,18 @@ class _MixPickerScreenState extends ConsumerState<MixPickerScreen> {
                         itemCount: _filtered.length,
                         itemBuilder: (context, i) {
                           final item       = _filtered[i];
-                          final id         = item['Id'] as String? ?? '';
-                          final name       = item['Name'] as String? ?? '';
-                          final sub        = widget.isArtist
+                          final id     = item['Id']   as String? ?? '';
+                          final name   = item['Name'] as String? ?? '';
+                          final sub    = widget.isArtist
                               ? null
                               : item['AlbumArtist'] as String?;
-                          final artUrl     = JellyfinApi.imageUrl(id, size: 200);
-                          final localAsset = widget.isArtist ? kArtistImages[name] : null;
-                          final isOn       = _selected.containsKey(id);
+                          final artUrl = JellyfinApi.imageUrl(id, size: 200);
+                          final isOn   = _selected.containsKey(id);
 
                           return ListTile(
                             onTap: () => _toggle(item),
                             leading: widget.isArtist
-                                ? _Circle(url: artUrl, assetPath: localAsset,
+                                ? ArtistAvatar(id: id, name: name,
                                     size: 44, theme: theme)
                                 : _Square(url: artUrl, size: 44, theme: theme),
                             title: Text(
@@ -284,11 +283,10 @@ class _SelectedPreview extends StatelessWidget {
         children: [
           // Item avatars
           ...visible.map((e) {
-            final id         = e.key;
-            final item       = e.value;
-            final name       = item['Name'] as String? ?? '';
-            final url        = JellyfinApi.imageUrl(id, size: 80);
-            final localAsset = isArtist ? kArtistImages[name] : null;
+            final id   = e.key;
+            final item = e.value;
+            final name = item['Name'] as String? ?? '';
+            final url  = JellyfinApi.imageUrl(id, size: 80);
             return Padding(
               padding: const EdgeInsets.only(right: 6),
               child: GestureDetector(
@@ -296,7 +294,7 @@ class _SelectedPreview extends StatelessWidget {
                 child: Stack(
                   children: [
                     isArtist
-                        ? _Circle(url: url, assetPath: localAsset,
+                        ? ArtistAvatar(id: id, name: name,
                             size: 36, theme: theme)
                         : _Square(url: url, size: 36, theme: theme),
                     // Small × badge
@@ -371,37 +369,7 @@ class _SelectedPreview extends StatelessWidget {
   }
 }
 
-// ── Shared image helpers ────────────────────────────────────────────────────
-class _Circle extends StatelessWidget {
-  final String url;
-  final String? assetPath; // local asset takes priority when set
-  final double size;
-  final VibeTheme theme;
-  const _Circle({required this.url, this.assetPath, required this.size, required this.theme});
-
-  @override
-  Widget build(BuildContext context) {
-    if (assetPath != null) {
-      return ClipOval(
-        child: Image.asset(assetPath!,
-            width: size, height: size, fit: BoxFit.cover),
-      );
-    }
-    return ClipOval(
-      child: CachedNetworkImage(
-        imageUrl: url,
-        width: size, height: size,
-        fit: BoxFit.cover,
-        placeholder: (_, _) => Container(
-            width: size, height: size, color: theme.surface),
-        errorWidget: (_, _, _) => Container(
-            width: size, height: size, color: theme.surface,
-            child: Icon(Icons.mic_none, color: theme.textFaint, size: size * 0.4)),
-      ),
-    );
-  }
-}
-
+// ── Album image helper ──────────────────────────────────────────────────────
 class _Square extends StatelessWidget {
   final String url;
   final double size;

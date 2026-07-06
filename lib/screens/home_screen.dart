@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
-import '../config/artist_images.dart';
 import '../providers.dart';
+import '../widgets/artist_avatar.dart';
 import '../theme/vibe_theme.dart';
 
 const double _kAlbumCard  = 140;
@@ -83,10 +83,8 @@ class _ArtistCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final id        = artist['Id'] as String? ?? '';
-    final name      = artist['Name'] as String? ?? '';
-    final localAsset = kArtistImages[name];
-    final remoteUrl  = id.isNotEmpty ? JellyfinApi.imageUrl(id, size: 200) : null;
+    final id   = artist['Id']   as String? ?? '';
+    final name = artist['Name'] as String? ?? '';
 
     return GestureDetector(
       onTap: onPress,
@@ -94,21 +92,7 @@ class _ArtistCard extends StatelessWidget {
         width: _kArtistSize + 8,
         child: Column(
           children: [
-            Container(
-              width: _kArtistSize, height: _kArtistSize,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: localAsset != null
-                  ? Image.asset(localAsset, fit: BoxFit.cover,
-                      width: _kArtistSize, height: _kArtistSize)
-                  : remoteUrl != null
-                      ? CachedNetworkImage(imageUrl: remoteUrl, fit: BoxFit.cover,
-                          placeholder: (_, _) => Container(color: theme.surface),
-                          errorWidget: (_, _, _) => Container(color: theme.surface))
-                      : Container(color: theme.surface),
-            ),
+            ArtistAvatar(id: id, name: name, size: _kArtistSize, theme: theme),
             const SizedBox(height: 6),
             Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,

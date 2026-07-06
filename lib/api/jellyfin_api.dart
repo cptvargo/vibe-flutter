@@ -97,15 +97,19 @@ class JellyfinApi {
           '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed');
 
   static Future<Map<String, dynamic>> search(String query, {int limit = 40}) async {
+    final q = Uri.encodeComponent(query);
     final results = await Future.wait([
-      _get('/Users/$_user/Items?SearchTerm=${Uri.encodeComponent(query)}'
+      _get('/Users/$_user/Items?SearchTerm=$q'
           '&IncludeItemTypes=Audio,MusicAlbum&Limit=$limit&Recursive=true'
           '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId'),
-      _get('/Artists?UserId=$_user&SearchTerm=${Uri.encodeComponent(query)}&Limit=10&Fields=PrimaryImageAspectRatio'),
+      _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib&SearchTerm=$q'
+          '&Limit=10&Fields=PrimaryImageAspectRatio,ImageTags'),
     ]);
-    final artists = (results[1]['Items'] as List).map((a) => {...a, 'Type': 'MusicArtist'}).toList();
-    final tracks  = results[0]['Items'] as List;
-    return {'Items': [...artists, ...tracks]};
+    final artists = (results[1]['Items'] as List)
+        .map((a) => {...(a as Map<String, dynamic>), 'Type': 'MusicArtist'})
+        .toList();
+    final rest = results[0]['Items'] as List;
+    return {'Items': [...artists, ...rest]};
   }
 
   // ── Playback reporting ─────────────────────────────────────────────────────

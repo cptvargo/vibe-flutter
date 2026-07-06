@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
+import '../theme/palette_service.dart';
+import '../theme/vibe_theme.dart';
 import '../widgets/mini_player.dart';
 
 class AlbumScreen extends ConsumerStatefulWidget {
@@ -27,13 +29,25 @@ class AlbumScreen extends ConsumerStatefulWidget {
 }
 
 class _AlbumScreenState extends ConsumerState<AlbumScreen> {
-  List<VibeTrack> _tracks  = [];
-  bool            _loading = true;
+  List<VibeTrack> _tracks     = [];
+  bool            _loading    = true;
+  VibeTheme?      _albumTheme;
 
   @override
   void initState() {
     super.initState();
     _loadTracks();
+    _extractPalette();
+  }
+
+  Future<void> _extractPalette() async {
+    try {
+      final url     = JellyfinApi.colorExtractionUrl(widget.albumId);
+      final palette = await PaletteService.extractFromUrl(url, widget.albumId);
+      if (palette != null && mounted) {
+        setState(() => _albumTheme = VibeTheme.from(palette));
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadTracks() async {
@@ -70,7 +84,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme   = ref.watch(themeProvider);
+    final VibeTheme theme = _albumTheme ?? ref.watch(themeProvider);
     final screenW = MediaQuery.of(context).size.width;
     final topPad  = MediaQuery.of(context).padding.top;
     final artUrl  = JellyfinApi.imageUrl(widget.albumId, size: 600);
@@ -113,11 +127,11 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                Colors.transparent,
-                                Colors.black.withAlpha(0x66),
+                                theme.accent.withAlpha(0x44),
+                                Colors.black.withAlpha(0x77),
                                 theme.background,
                               ],
-                              stops: const [0.35, 0.65, 1.0],
+                              stops: const [0.0, 0.55, 1.0],
                             ),
                           ),
                         ),

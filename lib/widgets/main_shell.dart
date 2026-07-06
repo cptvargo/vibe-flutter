@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../screens/home_screen.dart';
+import '../screens/library_screen.dart';
+import '../screens/search_screen.dart';
 import '../theme/palette_service.dart';
 import 'top_nav.dart';
 import 'mini_player.dart';
@@ -71,21 +73,11 @@ class _MainShellState extends ConsumerState<MainShell> {
   Widget _body(dynamic theme) {
     switch (_activeTab) {
       case 'home':    return const HomeScreen();
-      case 'search':  return _Placeholder(label: 'Search coming soon', theme: theme);
-      case 'library': return _Placeholder(label: 'Library coming soon', theme: theme);
-      case 'ai':      return _Placeholder(label: 'AI Music coming soon', theme: theme);
+      case 'search':  return const SearchScreen();
+      case 'library': return const LibraryScreen();
+      case 'ai':      return Center(child: Text('AI Music coming soon',
+                          style: TextStyle(color: theme.textDim, fontSize: 15)));
       default:        return const HomeScreen();
     }
   }
-}
-
-class _Placeholder extends StatelessWidget {
-  final String label;
-  final dynamic theme;
-  const _Placeholder({required this.label, required this.theme});
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Text(label, style: TextStyle(color: theme.textDim, fontSize: 15)),
-  );
 }

@@ -58,6 +58,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _animateDismiss() {
+    // Let mini player reappear on the underlying screen as player slides away
+    _playerOpenCtrl?.state = false;
     final screenH = MediaQuery.of(context).size.height;
     _snapAnim = Tween<double>(begin: _dragOffset, end: screenH)
         .animate(CurvedAnimation(parent: _snapCtrl, curve: Curves.easeIn));
@@ -79,15 +81,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final screenH = MediaQuery.of(context).size.height;
     final velocity = d.primaryVelocity ?? 0;
     if (velocity > 500 || _dragOffset > screenH * 0.28) {
-      // Dismiss: slide the rest of the way down, then pop
-      _snapAnim = Tween<double>(begin: _dragOffset, end: screenH)
-          .animate(CurvedAnimation(parent: _snapCtrl, curve: Curves.easeIn));
-      _snapAnim!.addListener(() {
-        if (mounted) setState(() => _dragOffset = _snapAnim!.value);
-      });
-      _snapCtrl.forward(from: 0).then((_) {
-        if (mounted) Navigator.pop(context);
-      });
+      _animateDismiss();
     } else {
       // Snap back up
       _snapAnim = Tween<double>(begin: _dragOffset, end: 0)
