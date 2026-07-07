@@ -64,6 +64,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Vibe uses audio session APIs for music playback. Microphone access is not used.</string>
 	<!-- Background audio playback — required for music to continue when screen locks -->
 	<key>UIBackgroundModes</key>
 	<array>
