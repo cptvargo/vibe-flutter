@@ -71,6 +71,19 @@ class JellyfinApi {
       _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib&Limit=$limit'
           '&Fields=PrimaryImageAspectRatio,Overview,ImageTags&SortBy=SortName');
 
+  static Future<String?> getArtistIdByName(String name) async {
+    try {
+      final q   = Uri.encodeComponent(name);
+      final res = await _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib'
+          '&SearchTerm=$q&Limit=1&Fields=PrimaryImageAspectRatio');
+      final items = (res['Items'] as List?) ?? [];
+      if (items.isEmpty) return null;
+      return (items.first as Map<String, dynamic>)['Id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>> getArtistAlbums(String artistId) =>
       _get('/Users/$_user/Items?AlbumArtistIds=$artistId&IncludeItemTypes=MusicAlbum'
           '&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=ProductionYear&SortOrder=Descending');

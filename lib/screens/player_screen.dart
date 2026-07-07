@@ -240,7 +240,8 @@ class _Content extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      useRootNavigator: false,
+      builder: (sheetCtx) => Container(
         decoration: BoxDecoration(
           color: theme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -263,7 +264,7 @@ class _Content extends ConsumerWidget {
                 title: Text('Go to Album',
                     style: TextStyle(color: theme.textColor)),
                 onTap: () {
-                  Navigator.pop(routerCtx); // close sheet only — player stays open
+                  Navigator.pop(sheetCtx);
                   routerCtx.push(
                     '/album/$albumId'
                     '?name=${Uri.encodeComponent(item.album ?? '')}'
@@ -271,17 +272,23 @@ class _Content extends ConsumerWidget {
                   );
                 },
               ),
-            if (artistId != null)
+            if (item.artist != null && item.artist!.isNotEmpty)
               ListTile(
-                leading: Icon(Icons.mic_none_rounded, color: theme.accentBright),
+                leading: Icon(Icons.person_outline_rounded, color: theme.accentBright),
                 title: Text('Go to Artist',
                     style: TextStyle(color: theme.textColor)),
-                onTap: () {
-                  Navigator.pop(routerCtx); // close sheet only — player stays open
-                  routerCtx.push(
-                    '/artist/$artistId'
-                    '?name=${Uri.encodeComponent(item.artist ?? '')}',
-                  );
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  String? id = artistId;
+                  if (id == null) {
+                    id = await JellyfinApi.getArtistIdByName(item.artist!);
+                  }
+                  if (id != null && routerCtx.mounted) {
+                    routerCtx.push(
+                      '/artist/$id'
+                      '?name=${Uri.encodeComponent(item.artist ?? '')}',
+                    );
+                  }
                 },
               ),
             const SizedBox(height: 8),
