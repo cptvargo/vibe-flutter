@@ -64,7 +64,7 @@ class VibeTrack {
     return VibeTrack(
       id:          j['Id'] as String,
       url:         JellyfinApi.streamUrl(j['Id'] as String),
-      title:       j['Name'] as String? ?? 'Unknown',
+      title:       ((j['Name'] as String?) ?? 'Unknown').split(' | ').first.trim(),
       artist:      j['AlbumArtist'] as String?
                      ?? (j['Artists'] as List?)?.firstOrNull as String?
                      ?? 'Unknown',
