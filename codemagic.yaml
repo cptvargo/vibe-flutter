@@ -8,6 +8,8 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.playvibemusic.vibe
+      groups:
+        - vibe-secrets
       vars:
         BUNDLE_ID: com.playvibemusic.vibe
       flutter: 3.44.4
