@@ -87,7 +87,6 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   Widget build(BuildContext context) {
     final VibeTheme theme = _albumTheme ?? ref.watch(themeProvider);
     final screenW = MediaQuery.of(context).size.width;
-    final topPad  = MediaQuery.of(context).padding.top;
     final artUrl  = JellyfinApi.imageUrl(widget.albumId, size: 600);
     // Cap art at 460px so the hero doesn't overflow on wide desktop windows
     final artSize = math.min(screenW, 460.0);
@@ -97,7 +96,9 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
       backgroundColor: theme.background,
       body: Stack(
         children: [
-          CustomScrollView(
+          SafeArea(
+            bottom: false,
+            child: CustomScrollView(
             slivers: [
 
               // ── Hero ──────────────────────────────────────────────────────
@@ -140,7 +141,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
 
                       // Back button
                       Positioned(
-                        top: topPad + 12, left: 16,
+                        top: 12, left: 16,
                         child: GestureDetector(
                           onTap: () => context.pop(),
                           child: Container(
@@ -313,6 +314,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
               ],
             ],
           ),
+          ), // SafeArea
 
           // MiniPlayer — floats above content (outside MainShell on this route)
           const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),

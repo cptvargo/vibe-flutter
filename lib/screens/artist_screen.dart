@@ -63,7 +63,6 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   Widget build(BuildContext context) {
     final theme     = ref.watch(themeProvider);
     final screenW   = MediaQuery.of(context).size.width;
-    final topPad    = MediaQuery.of(context).padding.top;
     final heroH     = 480.0;
     final cardW     = (screenW - 32 - 12) / 2;   // 2 columns, 12px gap
     final artUrl    = JellyfinApi.imageUrl(widget.artistId, size: 600);
@@ -73,7 +72,9 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       backgroundColor: theme.background,
       body: Stack(
         children: [
-          CustomScrollView(
+          SafeArea(
+            bottom: false,
+            child: CustomScrollView(
             slivers: [
           // â”€â”€ Hero â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           SliverToBoxAdapter(
@@ -116,7 +117,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
 
                   // Back button
                   Positioned(
-                    top: topPad + 12,
+                    top: 12,
                     left: 16,
                     child: GestureDetector(
                       onTap: () => context.pop(),
@@ -350,6 +351,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
           ],
         ],
       ),
+          ), // SafeArea
           // MiniPlayer stays visible while browsing the artist page
           const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
         ],
