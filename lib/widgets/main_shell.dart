@@ -6,6 +6,7 @@ import '../providers.dart';
 import '../screens/home_screen.dart';
 import '../screens/library_screen.dart';
 import '../screens/search_screen.dart';
+import '../screens/settings_screen.dart';
 import '../theme/palette_service.dart';
 import 'top_nav.dart';
 import 'mini_player.dart';
@@ -75,9 +76,10 @@ class _MainShellState extends ConsumerState<MainShell> {
       case 'home':    return const HomeScreen();
       case 'search':  return const SearchScreen();
       case 'library': return const LibraryScreen();
-      case 'ai':      return Center(child: Text('AI Music coming soon',
-                          style: TextStyle(color: theme.textDim, fontSize: 15)));
-      default:        return const HomeScreen();
+      case 'ai':       return Center(child: Text('AI Music coming soon',
+                           style: TextStyle(color: theme.textDim, fontSize: 15)));
+      case 'settings': return const SettingsScreen();
+      default:         return const HomeScreen();
     }
   }
 }

@@ -5,10 +5,11 @@ import '../providers.dart';
 import '../theme/vibe_theme.dart';
 
 const _kTabs = [
-  (id: 'home',    label: 'Home',    icon: Icons.home_outlined,           activeIcon: Icons.home),
-  (id: 'search',  label: 'Search',  icon: Icons.search_outlined,         activeIcon: Icons.search),
-  (id: 'library', label: 'Library', icon: Icons.library_music_outlined,  activeIcon: Icons.library_music),
-  (id: 'ai',      label: 'AI Music',icon: Icons.auto_awesome_outlined,   activeIcon: Icons.auto_awesome),
+  (id: 'home',     label: 'Home',     icon: Icons.home_outlined,           activeIcon: Icons.home),
+  (id: 'search',   label: 'Search',   icon: Icons.search_outlined,         activeIcon: Icons.search),
+  (id: 'library',  label: 'Library',  icon: Icons.library_music_outlined,  activeIcon: Icons.library_music),
+  (id: 'ai',       label: 'AI Music', icon: Icons.auto_awesome_outlined,   activeIcon: Icons.auto_awesome),
+  (id: 'settings', label: 'Settings', icon: Icons.person_outline,          activeIcon: Icons.person),
 ];
 
 class TopNav extends ConsumerWidget {

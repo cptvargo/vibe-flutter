@@ -1,14 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../providers/auth_provider.dart';
 import '../screens/album_screen.dart';
 import '../screens/artist_screen.dart';
+import '../screens/login_screen.dart';
 import '../screens/mix_picker_screen.dart';
 import '../screens/player_screen.dart';
 import '../widgets/main_shell.dart';
 
 final GoRouter router = GoRouter(
   initialLocation: '/',
+  refreshListenable: authNotifier,
+  redirect: (context, state) {
+    final loggedIn = authNotifier.isLoggedIn;
+    final atLogin  = state.matchedLocation == '/login';
+
+    if (!loggedIn && !atLogin) return '/login';
+    if (loggedIn  &&  atLogin) return '/';
+    return null;
+  },
   routes: [
+    GoRoute(
+      path: '/login',
+      builder: (context, state) => const LoginScreen(),
+    ),
     GoRoute(
       path: '/',
       builder: (context, state) => const MainShell(),
@@ -49,7 +64,6 @@ final GoRouter router = GoRouter(
           final slide = Tween(begin: const Offset(0, 1), end: Offset.zero)
               .chain(CurveTween(curve: Curves.easeOutCubic))
               .animate(animation);
-          // Fade in over the first 40% of the animation for a smooth roll-up feel
           final fade = Tween(begin: 0.0, end: 1.0)
               .chain(CurveTween(curve: const Interval(0.0, 0.4, curve: Curves.easeIn)))
               .animate(animation);

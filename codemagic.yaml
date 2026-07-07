@@ -1,0 +1,80 @@
+workflows:
+  ios-testflight:
+    name: iOS TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.playvibemusic.vibe
+      vars:
+        BUNDLE_ID: com.playvibemusic.vibe
+        XCODE_SCHEME: Runner
+        XCODE_WORKSPACE: ios/Runner.xcworkspace
+      flutter: 3.44.4
+      xcode: latest
+      cocoapods: default
+
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: 'v*'
+          include: true
+
+    scripts:
+      - name: Create private config
+        script: |
+          cat > "$CM_BUILD_DIR/lib/config/vibe_config.dart" <<EOF
+          class VibeConfig {
+            static const String serverUrl    = '$VIBE_SERVER_URL';
+            static const String apiKey       = '$VIBE_API_KEY';
+            static const String userId       = '$VIBE_USER_ID';
+            static const String vibeLibrary  = '$VIBE_LIBRARY_ID';
+            static const String colorServer  = '$VIBE_COLOR_SERVER';
+            static const String supabaseUrl  = '$SUPABASE_URL';
+            static const String supabaseAnon = '$SUPABASE_ANON_KEY';
+          }
+          EOF
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Flutter analyze
+        script: flutter analyze --no-pub
+
+      - name: Build iOS release
+        script: |
+          flutter build ios --release --no-codesign
+
+      - name: Set up code signing and build IPA
+        script: |
+          xcode-project use-profiles
+          cd ios && xcodebuild \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -archivePath ../build/ios/archive/Runner.xcarchive \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            | xcpretty
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath ../build/ios/archive/Runner.xcarchive \
+            -exportOptionsPlist /Users/builder/export_options.plist \
+            -exportPath ../build/ios/ipa \
+            | xcpretty
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - ViBE Testers

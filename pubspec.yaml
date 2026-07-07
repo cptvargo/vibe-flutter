@@ -30,6 +30,9 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.3.3
 
+  # ── Supabase (auth, profiles, invite codes) ─────────────────────────────────
+  supabase_flutter: ^2.8.4
+
   # ── Utilities ────────────────────────────────────────────────────────────────
   cupertino_icons: ^1.0.8
 

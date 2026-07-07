@@ -3,7 +3,9 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'audio/audio_handler.dart';
+import 'config/vibe_config.dart';
 import 'navigation/router.dart';
 import 'theme/palette_service.dart';
 import 'providers.dart';
@@ -25,6 +27,11 @@ Future<void> main() async {
     systemNavigationBarColor:   Colors.transparent,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+
+  await Supabase.initialize(
+    url:            VibeConfig.supabaseUrl,
+    publishableKey: VibeConfig.supabaseAnon,
+  );
 
   await PaletteService.init();
 
