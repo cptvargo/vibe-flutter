@@ -60,9 +60,12 @@ class JellyfinApi {
       _get('/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=MusicAlbum'
           '&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=SortName');
 
+  static const _trackFields =
+      'PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds';
+
   static Future<Map<String, dynamic>> getAlbumTracks(String albumId) =>
       _get('/Users/$_user/Items?ParentId=$albumId&IncludeItemTypes=Audio'
-          '&Fields=PrimaryImageAspectRatio,AudioInfo,ArtistItems,AlbumArtistIds&SortBy=IndexNumber');
+          '&Fields=$_trackFields,AlbumId&SortBy=IndexNumber');
 
   static Future<Map<String, dynamic>> getArtists({int limit = 200}) =>
       _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib&Limit=$limit'
@@ -74,26 +77,26 @@ class JellyfinApi {
 
   static Future<Map<String, dynamic>> getArtistTracks(String artistId, {int limit = 30}) =>
       _get('/Users/$_user/Items?ArtistIds=$artistId&IncludeItemTypes=Audio'
-          '&Recursive=true&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId&SortBy=Random&Limit=$limit');
+          '&Recursive=true&Fields=$_trackFields&SortBy=Random&Limit=$limit');
 
   static Future<Map<String, dynamic>> getArtistAllTracks(String artistId) =>
       _get('/Users/$_user/Items?AlbumArtistIds=$artistId&IncludeItemTypes=Audio'
-          '&Recursive=true&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId,AlbumId'
+          '&Recursive=true&Fields=$_trackFields,AlbumId'
           '&SortBy=ProductionYear,ParentIndexNumber,IndexNumber&SortOrder=Descending,Ascending,Ascending&Limit=500');
 
   static Future<Map<String, dynamic>> getAllTracks({int limit = 500}) =>
       _get('/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=Audio'
-          '&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId&SortBy=SortName');
+          '&Limit=$limit&Recursive=true&Fields=$_trackFields&SortBy=SortName');
 
   static Future<Map<String, dynamic>> getGenres({int limit = 30}) =>
       _get('/MusicGenres?UserId=$_user&ParentId=$_lib&Limit=$limit&SortBy=SortName');
 
   static Future<Map<String, dynamic>> getInstantMix(String itemId, {int limit = 50}) =>
-      _get('/Items/$itemId/InstantMix?UserId=$_user&Limit=$limit&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId');
+      _get('/Items/$itemId/InstantMix?UserId=$_user&Limit=$limit&Fields=$_trackFields');
 
   static Future<Map<String, dynamic>> getTopTracks({int limit = 50}) =>
       _get('/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=Audio'
-          '&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId'
+          '&Limit=$limit&Recursive=true&Fields=$_trackFields'
           '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed');
 
   static Future<Map<String, dynamic>> search(String query, {int limit = 40}) async {

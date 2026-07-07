@@ -284,12 +284,13 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (track != null) {
       RecentlyPlayedService.add(VibeTrack(
         id:         track.id,
-        url:        track.extras?['url'] as String? ?? '',
+        url:        track.extras?['url']      as String? ?? '',
         title:      track.title,
         artist:     track.artist ?? '',
         album:      track.album  ?? '',
-        albumId:    track.extras?['albumId'] as String?,
-        artworkUrl: track.artUri?.toString() ?? '',
+        albumId:    track.extras?['albumId']  as String?,
+        artistId:   track.extras?['artistId'] as String?,
+        artworkUrl: track.artUri?.toString()  ?? '',
         colorUrl:   track.extras?['colorUrl'] as String? ?? '',
         blurHash:   track.extras?['blurHash'] as String?,
         duration:   track.duration ?? Duration.zero,

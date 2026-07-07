@@ -263,8 +263,7 @@ class _Content extends ConsumerWidget {
                 title: Text('Go to Album',
                     style: TextStyle(color: theme.textColor)),
                 onTap: () {
-                  Navigator.pop(routerCtx); // close sheet
-                  routerCtx.pop();           // close player
+                  Navigator.pop(routerCtx); // close sheet only — player stays open
                   routerCtx.push(
                     '/album/$albumId'
                     '?name=${Uri.encodeComponent(item.album ?? '')}'
@@ -278,8 +277,7 @@ class _Content extends ConsumerWidget {
                 title: Text('Go to Artist',
                     style: TextStyle(color: theme.textColor)),
                 onTap: () {
-                  Navigator.pop(routerCtx); // close sheet
-                  routerCtx.pop();           // close player
+                  Navigator.pop(routerCtx); // close sheet only — player stays open
                   routerCtx.push(
                     '/artist/$artistId'
                     '?name=${Uri.encodeComponent(item.artist ?? '')}',
