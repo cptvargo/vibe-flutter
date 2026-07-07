@@ -24,36 +24,42 @@ final GoRouter router = GoRouter(
       path: '/login',
       builder: (context, state) => const LoginScreen(),
     ),
+
+    // Root shell — album/artist/mix are nested so router.go('/album/:id')
+    // resolves to [MainShell, TargetScreen], giving a proper back stack.
     GoRoute(
       path: '/',
       builder: (context, state) => const MainShell(),
+      routes: [
+        GoRoute(
+          path: 'artist/:id',
+          builder: (context, state) => ArtistScreen(
+            artistId:   state.pathParameters['id']!,
+            artistName: state.uri.queryParameters['name'] ?? '',
+          ),
+        ),
+        GoRoute(
+          path: 'album/:id',
+          builder: (context, state) => AlbumScreen(
+            albumId:    state.pathParameters['id']!,
+            albumName:  state.uri.queryParameters['name']   ?? '',
+            artistName: state.uri.queryParameters['artist'] ?? '',
+            year:       int.tryParse(state.uri.queryParameters['year'] ?? ''),
+          ),
+        ),
+        GoRoute(
+          path: 'mix/:type',
+          builder: (context, state) => MixPickerScreen(
+            type: state.pathParameters['type']!,
+          ),
+        ),
+      ],
     ),
-    GoRoute(
-      path: '/artist/:id',
-      builder: (context, state) => ArtistScreen(
-        artistId:   state.pathParameters['id']!,
-        artistName: state.uri.queryParameters['name'] ?? '',
-      ),
-    ),
-    GoRoute(
-      path: '/album/:id',
-      builder: (context, state) => AlbumScreen(
-        albumId:    state.pathParameters['id']!,
-        albumName:  state.uri.queryParameters['name']   ?? '',
-        artistName: state.uri.queryParameters['artist'] ?? '',
-        year:       int.tryParse(state.uri.queryParameters['year'] ?? ''),
-      ),
-    ),
-    GoRoute(
-      path: '/mix/:type',
-      builder: (context, state) => MixPickerScreen(
-        type: state.pathParameters['type']!,
-      ),
-    ),
+
+    // Player stays at root level — it's a full-screen modal overlay, not a
+    // sub-page of MainShell, and must be reachable from any route.
     GoRoute(
       path: '/player',
-      // Slide up from bottom; opaque:false keeps underlying route rendered
-      // so drag-to-dismiss can reveal the page below
       pageBuilder: (context, state) => CustomTransitionPage(
         key: state.pageKey,
         opaque: false,
@@ -65,7 +71,8 @@ final GoRouter router = GoRouter(
               .chain(CurveTween(curve: Curves.easeOutCubic))
               .animate(animation);
           final fade = Tween(begin: 0.0, end: 1.0)
-              .chain(CurveTween(curve: const Interval(0.0, 0.4, curve: Curves.easeIn)))
+              .chain(CurveTween(
+                  curve: const Interval(0.0, 0.4, curve: Curves.easeIn)))
               .animate(animation);
           return FadeTransition(
             opacity: fade,
