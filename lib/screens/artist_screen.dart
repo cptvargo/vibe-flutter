@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
+import '../widgets/artist_avatar.dart';
 import '../widgets/mini_player.dart';
 
 class ArtistScreen extends ConsumerStatefulWidget {
@@ -40,14 +41,15 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
 
   Future<void> _playAll({bool shuffle = false}) async {
     if (_loadingPlay || !mounted) return;
+    final isAI = ref.read(isAIProvider);
     ref.read(playerOpenProvider.notifier).state = true;
-    context.push('/player'); // open instantly
+    context.push('/player');
     setState(() => _loadingPlay = true);
     try {
       final res = await JellyfinApi.getArtistAllTracks(widget.artistId);
       final items = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       if (items.isEmpty) return;
-      final tracks = items.map(VibeTrack.fromJellyfin).toList();
+      final tracks = items.map((j) => VibeTrack.fromJellyfin(j, isAI: isAI)).toList();
       if (shuffle) tracks.shuffle();
       ref.read(audioHandlerProvider).playTracks(tracks, startIndex: 0);
     } catch (e) {
@@ -62,9 +64,10 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     final theme     = ref.watch(themeProvider);
     final screenW   = MediaQuery.of(context).size.width;
     final topPad    = MediaQuery.of(context).padding.top;
-    final heroH  = 480.0;
-    final cardW  = (screenW - 32 - 12) / 2;   // 2 columns, 12px gap
-    final artUrl = JellyfinApi.imageUrl(widget.artistId, size: 600);
+    final heroH     = 480.0;
+    final cardW     = (screenW - 32 - 12) / 2;   // 2 columns, 12px gap
+    final artUrl    = JellyfinApi.imageUrl(widget.artistId, size: 600);
+    final localAsset = ArtistAvatar.localAssetPath(widget.artistName);
 
     return Scaffold(
       backgroundColor: theme.background,
@@ -78,16 +81,19 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
               height: heroH,
               child: Stack(
                 children: [
-                  // Hero image
+                  // Hero image — local asset takes priority over Jellyfin
                   Positioned(
                     top: 0, left: 0, right: 0,
                     height: screenW,
-                    child: CachedNetworkImage(
-                      imageUrl: artUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (_, _) => Container(color: theme.surface),
-                      errorWidget: (_, _, _) => Container(color: theme.surface),
-                    ),
+                    child: localAsset != null
+                        ? Image.asset(localAsset, fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(color: theme.surface))
+                        : CachedNetworkImage(
+                            imageUrl: artUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (_, _) => Container(color: theme.surface),
+                            errorWidget: (_, _, _) => Container(color: theme.surface),
+                          ),
                   ),
 
                   // Gradient overlay: transparent â†’ semi-dark â†’ background

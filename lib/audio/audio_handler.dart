@@ -211,6 +211,11 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     queue.add(items);
     mediaItem.add(items[clampedStart]);
     await _player.setAudioSources(sources, initialIndex: clampedStart);
+    // Explicit seek after loading — just_audio_windows doesn't reliably
+    // honour initialIndex in setAudioSources, so we force the position.
+    if (clampedStart > 0) {
+      await _player.seek(Duration.zero, index: clampedStart);
+    }
     _loadingTracks = false;
     _reportProgressStart(items[clampedStart].id);
     _player.play(); // intentionally not awaited — play() resolves when audio ends

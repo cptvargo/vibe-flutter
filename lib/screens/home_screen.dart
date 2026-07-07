@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,159 +5,13 @@ import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
 import '../services/recently_played_service.dart';
-import '../widgets/artist_avatar.dart';
 import '../theme/vibe_theme.dart';
+import '../widgets/vibe_ui.dart';
 
-const double _kAlbumCard  = 140;
-const double _kArtistSize = 80;
+const _kAlbumSize  = 140.0;
+const _kArtistSize = 80.0;
 
-// ── Section header ─────────────────────────────────────────────────────────
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final VibeTheme theme;
-  const _SectionHeader({required this.title, required this.theme});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: theme.textColor,
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.2,
-        ),
-      ),
-    );
-  }
-}
-
-// ── Album card ─────────────────────────────────────────────────────────────
-class _AlbumCard extends StatelessWidget {
-  final Map<String, dynamic> item;
-  final VibeTheme theme;
-  final VoidCallback? onPress;
-  const _AlbumCard({required this.item, required this.theme, this.onPress});
-
-  @override
-  Widget build(BuildContext context) {
-    final itemId = item['Id'] as String? ?? '';
-    final artUrl = itemId.isNotEmpty ? JellyfinApi.imageUrl(itemId, size: 300) : null;
-
-    return GestureDetector(
-      onTap: onPress,
-      child: SizedBox(
-        width: _kAlbumCard,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _ImageBox(url: artUrl, size: _kAlbumCard, radius: 10,
-                surface: theme.surface, border: theme.border),
-            const SizedBox(height: 8),
-            Text(item['Name'] as String? ?? '',
-                maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: theme.textColor, fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 3),
-            Text(
-              item['AlbumArtist'] as String?
-                  ?? (item['Artists'] as List?)?.firstOrNull as String? ?? '',
-              maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: theme.textDim, fontSize: 11),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Artist circle card ─────────────────────────────────────────────────────
-class _ArtistCard extends StatelessWidget {
-  final Map<String, dynamic> artist;
-  final VibeTheme theme;
-  final VoidCallback? onPress;
-  const _ArtistCard({required this.artist, required this.theme, this.onPress});
-
-  @override
-  Widget build(BuildContext context) {
-    final id   = artist['Id']   as String? ?? '';
-    final name = artist['Name'] as String? ?? '';
-
-    return GestureDetector(
-      onTap: onPress,
-      child: SizedBox(
-        width: _kArtistSize + 8,
-        child: Column(
-          children: [
-            ArtistAvatar(id: id, name: name, size: _kArtistSize, theme: theme),
-            const SizedBox(height: 6),
-            Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: theme.textDim, fontSize: 11)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Track row ──────────────────────────────────────────────────────────────
-class _TrackRow extends StatelessWidget {
-  final Map<String, dynamic> track;
-  final VibeTheme theme;
-  final VoidCallback? onPress;
-  const _TrackRow({required this.track, required this.theme, this.onPress});
-
-  @override
-  Widget build(BuildContext context) {
-    final albumId = track['AlbumId'] as String?
-        ?? track['ParentId'] as String?
-        ?? track['Id'] as String? ?? '';
-    final artUrl = albumId.isNotEmpty ? JellyfinApi.imageUrl(albumId, size: 100) : null;
-
-    return GestureDetector(
-      onTap: onPress,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Row(
-          children: [
-            _ImageBox(url: artUrl, size: 48, radius: 6,
-                surface: theme.surface, border: theme.border),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(track['Name'] as String? ?? '',
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: theme.textColor, fontSize: 14,
-                          fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 3),
-                  Text(
-                    track['AlbumArtist'] as String?
-                        ?? (track['Artists'] as List?)?.firstOrNull as String? ?? '',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: theme.textDim, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: theme.textFaint, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Station card ────────────────────────────────────────────────────────────
-// Uses Material icons instead of emoji — emoji rendering is unreliable on
-// Windows desktop and some Android configurations.
-const _kStations = [
+const _kStations = <VibeStation>[
   (id: 'fire_mix',   label: 'Fire Mix',       icon: Icons.whatshot,    sub: 'Your marked bangers'),
   (id: 'vibe_radio', label: 'ViBE Radio',     icon: Icons.radio,       sub: 'Your full library'),
   (id: 'artist_mix', label: 'Artist Mix',     icon: Icons.mic_none,    sub: 'Based on now playing'),
@@ -166,90 +19,13 @@ const _kStations = [
   (id: 'top_month',  label: 'Top This Month', icon: Icons.trending_up, sub: 'Your most played'),
 ];
 
-class _StationCard extends StatelessWidget {
-  final ({String id, String label, IconData icon, String sub}) station;
-  final VibeTheme theme;
-  final VoidCallback? onTap;
-  const _StationCard({required this.station, required this.theme, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 140,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.accent.withAlpha(0x99)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(station.icon, size: 26,
-                color: station.id == 'fire_mix'
-                    ? const Color(0xFFFF6B1A)
-                    : theme.accentBright),
-            const SizedBox(height: 8),
-            Text(station.label,
-                style: TextStyle(color: theme.textColor, fontSize: 13,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Text(station.sub,
-                style: TextStyle(color: theme.textFaint, fontSize: 11)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Shared image box ────────────────────────────────────────────────────────
-class _ImageBox extends StatelessWidget {
-  final String? url;
-  final double size;
-  final double radius;
-  final Color surface;
-  final Color border;
-  const _ImageBox({this.url, required this.size, required this.radius,
-      required this.surface, required this.border});
-
-  @override
-  Widget build(BuildContext context) {
-    final decoration = BoxDecoration(
-      borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: border),
-      color: surface,
-    );
-    if (url == null) {
-      return Container(width: size, height: size, decoration: decoration);
-    }
-    return CachedNetworkImage(
-      imageUrl: url!, width: size, height: size, fit: BoxFit.cover,
-      imageBuilder: (_, provider) => Container(
-        width: size, height: size,
-        decoration: decoration.copyWith(
-          image: DecorationImage(image: provider, fit: BoxFit.cover),
-        ),
-      ),
-      placeholder: (_, _) =>
-          Container(width: size, height: size, decoration: decoration),
-      errorWidget: (_, _, _) =>
-          Container(width: size, height: size, decoration: decoration),
-    );
-  }
-}
-
-// ── Home screen ────────────────────────────────────────────────────────────
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
-
-  @override
-  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+  @override ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with TickerProviderStateMixin {
   List<VibeTrack>            _recentTracks = [];
   List<Map<String, dynamic>> _recentAlbums = [];
   List<Map<String, dynamic>> _topAlbums    = [];
@@ -257,15 +33,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool    _loading = true;
   String? _error;
 
+  late final AnimationController _enterCtrl;
+
   @override
   void initState() {
     super.initState();
+    _enterCtrl = AnimationController(
+      vsync:    this,
+      duration: const Duration(milliseconds: 900),
+    );
     _loadData();
-    // Rebuild when recently played changes (new track starts)
     RecentlyPlayedService.stream.listen((_) {
       if (mounted) setState(() => _recentTracks = RecentlyPlayedService.tracks);
     });
   }
+
+  @override
+  void dispose() {
+    _enterCtrl.dispose();
+    super.dispose();
+  }
+
+  Animation<double> _sec(int i) => CurvedAnimation(
+    parent: _enterCtrl,
+    curve: Interval(
+      (i * 0.12).clamp(0.0, 0.8),
+      ((i * 0.12) + 0.55).clamp(0.0, 1.0),
+      curve: Curves.easeOut,
+    ),
+  );
 
   Future<void> _loadData() async {
     setState(() { _loading = true; _error = null; });
@@ -274,15 +70,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         JellyfinApi.getRecentAlbums(),
         JellyfinApi.getTopAlbums(),
         JellyfinApi.getArtists(),
+        JellyfinApi.getAIArtists(),   // used only to exclude AI artists from Home
       ]);
       if (!mounted) return;
+
+      // Build exclusion sets from AI artists — both ID and name for maximum coverage
+      final aiArtists = (results[3]['Items'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
+      final aiArtistIds   = aiArtists.map((a) => a['Id']   as String? ?? '').toSet();
+      final aiArtistNames = aiArtists.map((a) => (a['Name'] as String? ?? '').trim().toLowerCase()).toSet();
 
       final seen = <String>{};
       final artists = (results[2]['Items'] as List? ?? [])
           .cast<Map<String, dynamic>>()
           .where((a) {
             final name = (a['Name'] as String? ?? '').trim();
-            if (name.isEmpty || name.contains(',')) return false;
+            final id   = a['Id'] as String? ?? '';
+            if (aiArtistIds.contains(id))                   return false;
+            if (aiArtistNames.contains(name.toLowerCase())) return false;
+            if (name.isEmpty || name.contains(','))         return false;
             return seen.add(name.toLowerCase());
           })
           .toList();
@@ -294,6 +100,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _artists      = artists;
         _loading      = false;
       });
+      _enterCtrl.forward(from: 0);
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = e.toString(); });
     }
@@ -303,7 +110,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!mounted) return;
     ref.read(isAIProvider.notifier).state = false;
     ref.read(playerOpenProvider.notifier).state = true;
-    context.push('/player'); // open instantly
+    context.push('/player');
     try {
       final result = await JellyfinApi.getAlbumTracks(album['Id'] as String);
       final tracks = ((result['Items'] as List?) ?? [])
@@ -343,14 +150,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
           ref.read(isAIProvider.notifier).state = false;
           ref.read(playerOpenProvider.notifier).state = true;
-          if (mounted) context.push('/player'); // open instantly
+          if (mounted) context.push('/player');
           handler.playTracks([...tracks]..shuffle());
           return;
 
         case 'vibe_radio':
           ref.read(isAIProvider.notifier).state = false;
           ref.read(playerOpenProvider.notifier).state = true;
-          if (mounted) context.push('/player'); // open instantly
+          if (mounted) context.push('/player');
           final res = await JellyfinApi.getAllTracks(limit: 500);
           final tracks = ((res['Items'] as List?) ?? [])
               .cast<Map<String, dynamic>>()
@@ -371,7 +178,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         case 'top_month':
           ref.read(isAIProvider.notifier).state = false;
           ref.read(playerOpenProvider.notifier).state = true;
-          if (mounted) context.push('/player'); // open instantly
+          if (mounted) context.push('/player');
           final res = await JellyfinApi.getTopTracks(limit: 50);
           final tracks = ((res['Items'] as List?) ?? [])
               .cast<Map<String, dynamic>>()
@@ -388,29 +195,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme   = ref.watch(themeProvider);
-    final screenH = MediaQuery.of(context).size.height;
+    final theme = ref.watch(themeProvider);
 
     return Stack(
       children: [
-        // Accent glow at top
+        // Breathing glow
         Positioned(
           top: 0, left: 0, right: 0,
-          height: screenH * 0.45,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  theme.accent.withAlpha(0x36),
-                  theme.accent.withAlpha(0x0F),
-                  Colors.transparent,
-                ],
-                stops: const [0.0, 0.3, 0.7],
-              ),
-            ),
-          ),
+          child: VibeBreathingGlow(color: theme.accent),
         ),
 
         if (_loading)
@@ -421,125 +213,133 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           RefreshIndicator(
             onRefresh: _loadData,
             child: ListView(
-            padding: EdgeInsets.only(
-              top: 8,
-              bottom: MediaQuery.of(context).padding.bottom + 100,
-            ),
-            children: [
-
-              // Artist Corner
-              if (_artists.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                _SectionHeader(title: 'Artist Corner', theme: theme),
-                const SizedBox(height: 14),
-                SizedBox(
-                  height: _kArtistSize + 44,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: _artists.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 12),
-                    itemBuilder: (_, i) {
-                      final a = _artists[i];
-                      return _ArtistCard(
-                        artist: a, theme: theme,
-                        onPress: () => context.push(
-                          '/artist/${a['Id']}?name=${Uri.encodeComponent(a['Name'] as String? ?? '')}',
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-
-              // Recently Played — sourced from local history, empty until songs play
-              if (_recentTracks.isNotEmpty) ...[
-                const SizedBox(height: 28),
-                _SectionHeader(title: 'Recently Played', theme: theme),
-                const SizedBox(height: 8),
-                ..._recentTracks.take(7).toList().asMap().entries.map(
-                  (e) => _TrackRow(
-                    track: {
-                      'Name':        e.value.title,
-                      'AlbumArtist': e.value.artist,
-                      'AlbumId':     e.value.albumId,
-                      'Id':          e.value.id,
-                    },
-                    theme: theme,
-                    onPress: () => _playTrack(e.key),
-                  ),
-                ),
-              ],
-
-              // Recently Added
-              if (_recentAlbums.isNotEmpty) ...[
-                const SizedBox(height: 28),
-                _SectionHeader(title: 'Recently Added in ViBE', theme: theme),
-                const SizedBox(height: 14),
-                SizedBox(
-                  height: _kAlbumCard + 72,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: _recentAlbums.take(10).length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 14),
-                    itemBuilder: (_, i) => _AlbumCard(
-                      item: _recentAlbums[i], theme: theme,
-                      onPress: () => _playAlbum(_recentAlbums[i]),
-                    ),
-                  ),
-                ),
-              ],
-
-              // Stations — always shown, data is hardcoded
-              const SizedBox(height: 28),
-              _SectionHeader(title: 'Stations', theme: theme),
-              const SizedBox(height: 14),
-              SizedBox(
-                height: 140,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: _kStations.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 12),
-                  itemBuilder: (_, i) => _StationCard(
-                    station: _kStations[i],
-                    theme: theme,
-                    onTap: () => _playStation(_kStations[i].id),
-                  ),
-                ),
+              padding: EdgeInsets.only(
+                top:    8,
+                bottom: MediaQuery.of(context).padding.bottom + 100,
               ),
+              children: [
 
-              // Top Albums
-              if (_topAlbums.isNotEmpty) ...[
-                const SizedBox(height: 28),
-                _SectionHeader(title: 'Top Albums', theme: theme),
-                const SizedBox(height: 14),
-                SizedBox(
-                  height: _kAlbumCard + 72,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: _topAlbums.take(10).length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 14),
-                    itemBuilder: (_, i) => _AlbumCard(
-                      item: _topAlbums[i], theme: theme,
-                      onPress: () => _playAlbum(_topAlbums[i]),
+                // Artist Corner
+                if (_artists.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  VibeFadeSlide(animation: _sec(0),
+                    child: VibeSectionHeader(title: 'Artist Corner', theme: theme)),
+                  const SizedBox(height: 14),
+                  VibeFadeSlide(animation: _sec(0),
+                    child: SizedBox(
+                      height: _kArtistSize + 50,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: _artists.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
+                        itemBuilder: (_, i) {
+                          final a = _artists[i];
+                          return VibeArtistCard(
+                            artist: a, theme: theme,
+                            onPress: () => context.push(
+                              '/artist/${a['Id']}?name=${Uri.encodeComponent(a['Name'] as String? ?? '')}',
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
 
-              const SizedBox(height: 28),
-            ],
-          ),
+                // Recently Played
+                if (_recentTracks.isNotEmpty) ...[
+                  const SizedBox(height: 28),
+                  VibeFadeSlide(animation: _sec(1),
+                    child: VibeSectionHeader(title: 'Recently Played', theme: theme)),
+                  const SizedBox(height: 8),
+                  VibeFadeSlide(animation: _sec(1),
+                    child: Column(
+                      children: _recentTracks.take(7).toList().asMap().entries.map(
+                        (e) => VibeTrackRow(
+                          track: {
+                            'Name':        e.value.title,
+                            'AlbumArtist': e.value.artist,
+                            'AlbumId':     e.value.albumId,
+                            'Id':          e.value.id,
+                          },
+                          theme: theme,
+                          onPress: () => _playTrack(e.key),
+                        ),
+                      ).toList(),
+                    ),
+                  ),
+                ],
+
+                // Recently Added
+                if (_recentAlbums.isNotEmpty) ...[
+                  const SizedBox(height: 28),
+                  VibeFadeSlide(animation: _sec(2),
+                    child: VibeSectionHeader(title: 'Recently Added in ViBE', theme: theme)),
+                  const SizedBox(height: 14),
+                  VibeFadeSlide(animation: _sec(2),
+                    child: SizedBox(
+                      height: _kAlbumSize + 72,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: _recentAlbums.take(10).length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
+                        itemBuilder: (_, i) => VibeAlbumCard(
+                          item: _recentAlbums[i], theme: theme,
+                          onPress: () => _playAlbum(_recentAlbums[i]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Stations
+                const SizedBox(height: 28),
+                VibeFadeSlide(animation: _sec(3),
+                  child: VibeSectionHeader(title: 'Stations', theme: theme)),
+                const SizedBox(height: 14),
+                VibeFadeSlide(animation: _sec(3),
+                  child: VibeStationGrid(
+                    stations: _kStations,
+                    theme:    theme,
+                    onTap:    _playStation,
+                  ),
+                ),
+
+                // Top Albums
+                if (_topAlbums.isNotEmpty) ...[
+                  const SizedBox(height: 28),
+                  VibeFadeSlide(animation: _sec(4),
+                    child: VibeSectionHeader(title: 'Top Albums', theme: theme)),
+                  const SizedBox(height: 14),
+                  VibeFadeSlide(animation: _sec(4),
+                    child: SizedBox(
+                      height: _kAlbumSize + 72,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: _topAlbums.take(10).length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 14),
+                        itemBuilder: (_, i) => VibeAlbumCard(
+                          item: _topAlbums[i], theme: theme,
+                          onPress: () => _playAlbum(_topAlbums[i]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 28),
+              ],
+            ),
           ),
       ],
     );
   }
 }
 
-// ── Error state ────────────────────────────────────────────────────────────
+// ── Error state ────────────────────────────────────────────────────────────────
 class _ErrorState extends StatelessWidget {
   final String error;
   final VibeTheme theme;
@@ -547,38 +347,39 @@ class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.error, required this.theme, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.wifi_off_rounded, size: 48, color: theme.textFaint),
-            const SizedBox(height: 16),
-            Text('Could not reach Jellyfin',
-                style: TextStyle(color: theme.textColor, fontSize: 16,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Text(error,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: theme.textFaint, fontSize: 11)),
-            const SizedBox(height: 24),
-            GestureDetector(
-              onTap: onRetry,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(
-                  color: theme.accent,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Text('Retry',
-                    style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w600)),
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.wifi_off_rounded, size: 48, color: theme.textFaint),
+          const SizedBox(height: 16),
+          Text('Could not reach Jellyfin',
+              style: TextStyle(color: theme.textColor, fontSize: 16,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Text(error,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.textFaint, fontSize: 11)),
+          const SizedBox(height: 24),
+          VibeBounce(
+            onTap: onRetry,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color:        theme.accent,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(color: theme.accent.withAlpha(0x66), blurRadius: 14),
+                ],
               ),
+              child: Text('Retry',
+                  style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w600)),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

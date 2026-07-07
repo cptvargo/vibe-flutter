@@ -61,7 +61,10 @@ class _MainShellState extends ConsumerState<MainShell> {
             children: [
               TopNav(
                 activeTab: _activeTab,
-                onTabChange: (tab) => setState(() => _activeTab = tab),
+                onTabChange: (tab) {
+                  setState(() => _activeTab = tab);
+                  ref.read(isAIProvider.notifier).state = (tab == 'ai');
+                },
               ),
               Expanded(child: _body(theme)),
             ],
