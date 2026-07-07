@@ -14,7 +14,7 @@ const double _kArtistSize = 80;
 
 const _kAIStations = [
   (id: 'ai_fire',    label: 'Fire Mix',       icon: Icons.whatshot,     sub: 'Your AI bangers'),
-  (id: 'ai_radio',   label: 'ZÆYUS Radio',    icon: Icons.auto_awesome, sub: 'Full AI library'),
+  (id: 'ai_radio',   label: 'Neural Radio',   icon: Icons.auto_awesome, sub: 'Full AI library'),
   (id: 'ai_artist',  label: 'Artist Mix',     icon: Icons.mic_none,     sub: 'Based on now playing'),
   (id: 'ai_album',   label: 'Album Mix',      icon: Icons.album,        sub: 'Based on now playing'),
   (id: 'ai_top',     label: 'Top This Month', icon: Icons.trending_up,  sub: 'Your most played'),
