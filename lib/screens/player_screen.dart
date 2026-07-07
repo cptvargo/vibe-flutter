@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
 import '../api/jellyfin_api.dart';
@@ -12,6 +13,19 @@ import '../api/jellyfin_models.dart';
 import '../audio/audio_handler.dart';
 import '../providers.dart';
 import '../theme/vibe_theme.dart';
+
+const _kAlbumSvg = '''
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <rect x="3" y="3" width="18" height="18" rx="3" stroke="#000000" stroke-width="1.5"/>
+  <circle cx="12" cy="12" r="4.5" stroke="#000000" stroke-width="1.5"/>
+  <circle cx="12" cy="12" r="1.5" fill="#000000"/>
+</svg>''';
+
+const _kArtistSvg = '''
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <circle cx="12" cy="8" r="4" stroke="#000000" stroke-width="1.5"/>
+  <path d="M4 20c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke="#000000" stroke-width="1.5" stroke-linecap="round"/>
+</svg>''';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key});
@@ -232,10 +246,11 @@ class _Content extends ConsumerWidget {
     this.artUrl,
   });
 
-  void _showOptions(BuildContext context, MediaItem item, VibeTheme theme) {
+  void _showOptions(BuildContext context, WidgetRef ref, MediaItem item, VibeTheme theme) {
     final albumId  = item.extras?['albumId']  as String?;
     final artistId = item.extras?['artistId'] as String?;
-    final routerCtx = context;
+    // Capture router before any navigation; GoRouter is app-lifetime stable.
+    final router = GoRouter.of(context);
 
     showModalBottomSheet(
       context: context,
@@ -260,12 +275,18 @@ class _Content extends ConsumerWidget {
             ),
             if (albumId != null)
               ListTile(
-                leading: Icon(Icons.album_outlined, color: theme.accentBright),
+                leading: SvgPicture.string(
+                  _kAlbumSvg,
+                  width: 24, height: 24,
+                  colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+                ),
                 title: Text('Go to Album',
                     style: TextStyle(color: theme.textColor)),
                 onTap: () {
                   Navigator.pop(sheetCtx);
-                  routerCtx.push(
+                  // Dismiss the player and show the mini player on the album screen.
+                  ref.read(playerOpenProvider.notifier).state = false;
+                  router.go(
                     '/album/$albumId'
                     '?name=${Uri.encodeComponent(item.album ?? '')}'
                     '&artist=${Uri.encodeComponent(item.artist ?? '')}',
@@ -274,17 +295,19 @@ class _Content extends ConsumerWidget {
               ),
             if (item.artist != null && item.artist!.isNotEmpty)
               ListTile(
-                leading: Icon(Icons.person_outline_rounded, color: theme.accentBright),
+                leading: SvgPicture.string(
+                  _kArtistSvg,
+                  width: 24, height: 24,
+                  colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+                ),
                 title: Text('Go to Artist',
                     style: TextStyle(color: theme.textColor)),
                 onTap: () async {
                   Navigator.pop(sheetCtx);
-                  String? id = artistId;
-                  if (id == null) {
-                    id = await JellyfinApi.getArtistIdByName(item.artist!);
-                  }
-                  if (id != null && routerCtx.mounted) {
-                    routerCtx.push(
+                  ref.read(playerOpenProvider.notifier).state = false;
+                  String? id = artistId ?? await JellyfinApi.getArtistIdByName(item.artist!);
+                  if (id != null) {
+                    router.go(
                       '/artist/$id'
                       '?name=${Uri.encodeComponent(item.artist ?? '')}',
                     );
@@ -333,7 +356,7 @@ class _Content extends ConsumerWidget {
               IconButton(
                 icon: Icon(Icons.more_horiz,
                     color: Colors.white.withAlpha(0xBB)),
-                onPressed: () => _showOptions(context, item, theme),
+                onPressed: () => _showOptions(context, ref, item, theme),
               ),
             ],
           ),

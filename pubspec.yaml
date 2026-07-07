@@ -33,6 +33,9 @@ dependencies:
   # ── Supabase (auth, profiles, invite codes) ─────────────────────────────────
   supabase_flutter: ^2.8.4
 
+  # ── SVG rendering ────────────────────────────────────────────────────────────
+  flutter_svg: ^2.0.0
+
   # ── Utilities ────────────────────────────────────────────────────────────────
   cupertino_icons: ^1.0.8
 
