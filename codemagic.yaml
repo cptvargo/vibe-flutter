@@ -15,6 +15,9 @@ workflows:
       flutter: 3.44.4
       xcode: latest
 
+    integrations:
+      app_store_connect: Codemagic
+
     triggering:
       events:
         - tag
