@@ -3,7 +3,16 @@ import 'package:flutter/material.dart';
 import '../api/jellyfin_api.dart';
 import '../theme/vibe_theme.dart';
 
+// Local asset overrides — keyed by lowercase artist name, value is asset path.
+// Add an entry here whenever you have a custom artist image in assets/artists/.
+const _kArtistAssets = <String, String>{
+  'nameless generation': 'assets/artists/NG.png',
+};
+
 class ArtistAvatar extends StatelessWidget {
+  /// Returns the bundled asset path for [name], or null if none registered.
+  static String? localAssetPath(String name) =>
+      _kArtistAssets[name.trim().toLowerCase()];
   final String id;
   final String name;
   final double size;
@@ -29,9 +38,9 @@ class ArtistAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url      = JellyfinApi.imageUrl(id, size: size.toInt());
-    final initials = _initials(name);
-    final radius   = circle ? size / 2 : size * 0.18;
+    final initials  = _initials(name);
+    final radius    = circle ? size / 2 : size * 0.18;
+    final assetPath = _kArtistAssets[name.trim().toLowerCase()];
 
     final fallback = Container(
       width: size, height: size,
@@ -52,10 +61,25 @@ class ArtistAvatar extends StatelessWidget {
       ),
     );
 
+    final clip = BorderRadius.circular(radius);
+
+    // Use bundled asset if available, otherwise fetch from Jellyfin
+    if (assetPath != null) {
+      return ClipRRect(
+        borderRadius: clip,
+        child: Image.asset(
+          assetPath,
+          width: size, height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => fallback,
+        ),
+      );
+    }
+
     return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
+      borderRadius: clip,
       child: CachedNetworkImage(
-        imageUrl: url,
+        imageUrl: JellyfinApi.imageUrl(id, size: size.toInt()),
         width: size, height: size,
         fit: BoxFit.cover,
         placeholder: (_, _) =>

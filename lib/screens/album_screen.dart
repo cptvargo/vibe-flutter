@@ -52,12 +52,13 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
 
   Future<void> _loadTracks() async {
     try {
+      final isAI   = ref.read(isAIProvider);
       final result = await JellyfinApi.getAlbumTracks(widget.albumId);
       final items  = ((result['Items'] as List?) ?? [])
           .cast<Map<String, dynamic>>();
       if (mounted) {
         setState(() {
-          _tracks  = items.map(VibeTrack.fromJellyfin).toList();
+          _tracks  = items.map((j) => VibeTrack.fromJellyfin(j, isAI: isAI)).toList();
           _loading = false;
         });
       }
