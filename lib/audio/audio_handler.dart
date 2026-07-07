@@ -156,13 +156,22 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _xfadeTimer?.cancel();
     _xfadeTimer = null;
 
-    // Sync _player to where _xfadePlayer already is so the track position is right
     final syncPos = _xfadePlayer.position;
-    if (syncPos > Duration.zero) {
-      await _player.seek(syncPos);
-    }
-    await _player.setVolume(1.0);
+
+    // Stop xfade player and restore main volume first
     await _xfadePlayer.stop();
+    await _player.setVolume(1.0);
+
+    // Only seek if duration is known and syncPos is within track bounds —
+    // seeking before duration is available can cause a spurious `completed`
+    // state emission that prematurely dismisses the player screen.
+    final dur = _player.duration;
+    if (syncPos > Duration.zero && dur != null && syncPos < dur) {
+      try {
+        await _player.seek(syncPos);
+      } catch (_) {}
+    }
+
     _crossfading = false;
   }
 
