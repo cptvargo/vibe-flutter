@@ -1,6 +1,9 @@
 # Vibe private config (credentials — never commit)
 lib/config/vibe_config.dart
 
+# Apple private keys — upload to Codemagic, never commit
+*.p8
+
 # Miscellaneous
 *.class
 *.log
