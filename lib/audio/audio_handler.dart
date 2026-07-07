@@ -20,6 +20,7 @@ MediaItem _toMediaItem(VibeTrack t) => MediaItem(
     'colorUrl':      t.colorUrl,
     'blurHash':      t.blurHash,
     'durationMicros': t.duration.inMicroseconds,
+    'isAI':          t.isAI,
   },
 );
 
@@ -295,6 +296,7 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         blurHash:   track.extras?['blurHash'] as String?,
         duration:   track.duration ?? Duration.zero,
         raw:        {},
+        isAI:       track.extras?['isAI']     as bool? ?? false,
       ));
     }
   }

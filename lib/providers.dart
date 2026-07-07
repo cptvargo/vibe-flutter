@@ -13,13 +13,17 @@ final audioHandlerProvider = Provider<VibeAudioHandler>(
 // True while the full player screen is on the navigation stack
 final playerOpenProvider = StateProvider<bool>((ref) => false);
 
+// True when the currently playing track is from the AI library
+final isAIProvider = StateProvider<bool>((ref) => false);
+
 // Current palette — updated when track changes
 final paletteProvider = StateProvider<VibePalette>((ref) => VibePalette.fallback);
 
-// Current theme — derived from palette
+// Current theme — Synthwave when AI track is playing, regular otherwise
 final themeProvider = Provider<VibeTheme>((ref) {
   final palette = ref.watch(paletteProvider);
-  return VibeTheme.from(palette);
+  final isAI    = ref.watch(isAIProvider);
+  return isAI ? VibeTheme.synthwave(palette) : VibeTheme.from(palette);
 });
 
 // Fire Mix — tracks the user has marked as fire; persisted to SharedPreferences

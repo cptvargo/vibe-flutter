@@ -4,7 +4,8 @@ import '../config/vibe_config.dart';
 
 // Jellyfin API service — translated from jellyfin.js
 class JellyfinApi {
-  static const _lib  = VibeConfig.vibeLibrary;
+  static const _lib   = VibeConfig.vibeLibrary;
+  static const _aiLib = VibeConfig.aiLibrary;
   static const _user = VibeConfig.userId;
   static const _key  = VibeConfig.apiKey;
 
@@ -111,6 +112,44 @@ class JellyfinApi {
       _get('/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=Audio'
           '&Limit=$limit&Recursive=true&Fields=$_trackFields'
           '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed');
+
+  // ── AI library queries ─────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getAIRecentAlbums({int limit = 20}) =>
+      _get('/Users/$_user/Items?ParentId=$_aiLib&SortBy=DateCreated&SortOrder=Descending'
+          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio');
+
+  static Future<Map<String, dynamic>> getAITopAlbums({int limit = 20}) =>
+      _get('/Users/$_user/Items?ParentId=$_aiLib&SortBy=PlayCount&SortOrder=Descending'
+          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio');
+
+  static Future<Map<String, dynamic>> getAIArtists({int limit = 200}) =>
+      _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_aiLib&Limit=$limit'
+          '&Fields=PrimaryImageAspectRatio,Overview,ImageTags&SortBy=SortName');
+
+  static Future<Map<String, dynamic>> getAIAllTracks({int limit = 500}) =>
+      _get('/Users/$_user/Items?ParentId=$_aiLib&IncludeItemTypes=Audio'
+          '&Limit=$limit&Recursive=true&Fields=$_trackFields&SortBy=SortName');
+
+  static Future<Map<String, dynamic>> getAITopTracks({int limit = 50}) =>
+      _get('/Users/$_user/Items?ParentId=$_aiLib&IncludeItemTypes=Audio'
+          '&Limit=$limit&Recursive=true&Fields=$_trackFields'
+          '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed');
+
+  static Future<String?> getAIArtistIdByName(String name) async {
+    try {
+      final q   = Uri.encodeComponent(name);
+      final res = await _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_aiLib'
+          '&SearchTerm=$q&Limit=1&Fields=PrimaryImageAspectRatio');
+      final items = (res['Items'] as List?) ?? [];
+      if (items.isEmpty) return null;
+      return (items.first as Map<String, dynamic>)['Id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Search ─────────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> search(String query, {int limit = 40}) async {
     final q = Uri.encodeComponent(query);

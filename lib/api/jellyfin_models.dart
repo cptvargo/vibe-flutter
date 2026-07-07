@@ -14,6 +14,7 @@ class VibeTrack {
   final String? blurHash;
   final Duration duration;
   final Map<String, dynamic> raw;
+  final bool isAI;
 
   const VibeTrack({
     required this.id,
@@ -28,6 +29,7 @@ class VibeTrack {
     this.blurHash,
     required this.duration,
     required this.raw,
+    this.isAI = false,
   });
 
   factory VibeTrack.fromJson(Map<String, dynamic> j) => VibeTrack(
@@ -43,6 +45,7 @@ class VibeTrack {
     blurHash:   j['blurHash']   as String?,
     duration:   Duration(microseconds: j['durationMicros'] as int),
     raw:        {},
+    isAI:       j['isAI']       as bool? ?? false,
   );
 
   Map<String, dynamic> toJson() => {
@@ -57,9 +60,10 @@ class VibeTrack {
     'colorUrl':      colorUrl,
     'blurHash':      blurHash,
     'durationMicros': duration.inMicroseconds,
+    'isAI':          isAI,
   };
 
-  factory VibeTrack.fromJellyfin(Map<String, dynamic> j) {
+  factory VibeTrack.fromJellyfin(Map<String, dynamic> j, {bool isAI = false}) {
     final albumId   = j['AlbumId'] as String? ?? j['ParentId'] as String? ?? j['Id'] as String;
     final blurMap   = (j['ImageBlurHashes'] as Map?)?['Primary'] as Map?;
     final blurHash  = blurMap != null ? blurMap.values.firstOrNull as String? : null;
@@ -83,6 +87,7 @@ class VibeTrack {
       blurHash:    blurHash,
       duration:    Duration(microseconds: (ticks / 10).round()),
       raw:         j,
+      isAI:        isAI,
     );
   }
 }

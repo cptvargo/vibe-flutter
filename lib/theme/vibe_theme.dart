@@ -57,6 +57,38 @@ class VibeTheme {
 
   static VibeTheme get defaults => VibeTheme.from(VibePalette.fallback);
 
+  // ── Synthwave / AI theme ────────────────────────────────────────────────────
+
+  // Fixed Synthwave base colors
+  static const _swBackground = Color(0xFF080812);
+  static const _swSurface    = Color(0xFF140824);
+  static const _swNeonPink   = Color(0xFFE91E8C);
+  static const _swNeonCyan   = Color(0xFF00E5FF);
+  static const _swTextDim    = Color(0xFFB0A0D0);
+  static const _swTextFaint  = Color(0xFF604080);
+
+  // Synthwave theme: fixed dark base + album-art accent blended toward neon pink
+  static VibeTheme synthwave(VibePalette p) {
+    final albumAccent = _clampL(p.vibrant, 0.40, 0.70);
+    final albumBright = _clampL(p.lightVibrant, 0.55, 0.85);
+    final accent      = Color.lerp(albumAccent, _swNeonPink, 0.55)!;
+    final accentBright = Color.lerp(albumBright, _swNeonCyan, 0.40)!;
+
+    return VibeTheme(
+      accent:       accent,
+      accentBright: accentBright,
+      surface:      _swSurface,
+      background:   _swBackground,
+      border:       const Color(0xFF8800FF).withAlpha(0x30),
+      textColor:    Colors.white,
+      textDim:      _swTextDim,
+      textFaint:    _swTextFaint,
+      tint1:        _swSurface.withAlpha(0x88),
+      tint2:        const Color(0xFF300060).withAlpha(0x44),
+      textIsLight:  true,
+    );
+  }
+
   // ── Color math ──────────────────────────────────────────────────────────────
 
   // Clamp HSL lightness so accent colors are always legible on dark backgrounds
