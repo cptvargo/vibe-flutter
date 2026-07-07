@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
@@ -231,6 +232,67 @@ class _Content extends ConsumerWidget {
     this.artUrl,
   });
 
+  void _showOptions(BuildContext context, MediaItem item, VibeTheme theme) {
+    final albumId  = item.extras?['albumId']  as String?;
+    final artistId = item.extras?['artistId'] as String?;
+    final routerCtx = context;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: BoxDecoration(
+          color: theme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(0x44),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            if (albumId != null)
+              ListTile(
+                leading: Icon(Icons.album_outlined, color: theme.accentBright),
+                title: Text('Go to Album',
+                    style: TextStyle(color: theme.textColor)),
+                onTap: () {
+                  Navigator.pop(routerCtx); // close sheet
+                  routerCtx.pop();           // close player
+                  routerCtx.push(
+                    '/album/$albumId'
+                    '?name=${Uri.encodeComponent(item.album ?? '')}'
+                    '&artist=${Uri.encodeComponent(item.artist ?? '')}',
+                  );
+                },
+              ),
+            if (artistId != null)
+              ListTile(
+                leading: Icon(Icons.mic_none_rounded, color: theme.accentBright),
+                title: Text('Go to Artist',
+                    style: TextStyle(color: theme.textColor)),
+                onTap: () {
+                  Navigator.pop(routerCtx); // close sheet
+                  routerCtx.pop();           // close player
+                  routerCtx.push(
+                    '/artist/$artistId'
+                    '?name=${Uri.encodeComponent(item.artist ?? '')}',
+                  );
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   static String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
@@ -266,7 +328,7 @@ class _Content extends ConsumerWidget {
               IconButton(
                 icon: Icon(Icons.more_horiz,
                     color: Colors.white.withAlpha(0xBB)),
-                onPressed: () {},
+                onPressed: () => _showOptions(context, item, theme),
               ),
             ],
           ),

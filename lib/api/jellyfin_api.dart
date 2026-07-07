@@ -46,7 +46,7 @@ class JellyfinApi {
   static Future<Map<String, dynamic>> getRecentlyPlayed({int limit = 20}) =>
       _get('/Users/$_user/Items?ParentId=$_lib&SortBy=DatePlayed&SortOrder=Descending'
           '&IncludeItemTypes=Audio&Limit=$limit&Recursive=true'
-          '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId&IsPlayed=true&Filters=IsPlayed');
+          '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds&IsPlayed=true&Filters=IsPlayed');
 
   static Future<Map<String, dynamic>> getRecentAlbums({int limit = 20}) =>
       _get('/Users/$_user/Items?ParentId=$_lib&SortBy=DateCreated&SortOrder=Descending'

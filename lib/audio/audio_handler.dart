@@ -16,6 +16,7 @@ MediaItem _toMediaItem(VibeTrack t) => MediaItem(
   extras:   {
     'url':           t.url,
     'albumId':       t.albumId,
+    'artistId':      t.artistId,
     'colorUrl':      t.colorUrl,
     'blurHash':      t.blurHash,
     'durationMicros': t.duration.inMicroseconds,

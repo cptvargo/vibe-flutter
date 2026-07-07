@@ -8,6 +8,7 @@ class VibeTrack {
   final String artist;
   final String album;
   final String? albumId;
+  final String? artistId;
   final String artworkUrl;
   final String colorUrl;   // 32px thumbnail for fast color extraction
   final String? blurHash;
@@ -21,6 +22,7 @@ class VibeTrack {
     required this.artist,
     required this.album,
     this.albumId,
+    this.artistId,
     required this.artworkUrl,
     required this.colorUrl,
     this.blurHash,
@@ -35,6 +37,7 @@ class VibeTrack {
     artist:     j['artist']     as String,
     album:      j['album']      as String,
     albumId:    j['albumId']    as String?,
+    artistId:   j['artistId']   as String?,
     artworkUrl: j['artworkUrl'] as String,
     colorUrl:   j['colorUrl']   as String,
     blurHash:   j['blurHash']   as String?,
@@ -49,6 +52,7 @@ class VibeTrack {
     'artist':        artist,
     'album':         album,
     'albumId':       albumId,
+    'artistId':      artistId,
     'artworkUrl':    artworkUrl,
     'colorUrl':      colorUrl,
     'blurHash':      blurHash,
@@ -56,10 +60,13 @@ class VibeTrack {
   };
 
   factory VibeTrack.fromJellyfin(Map<String, dynamic> j) {
-    final albumId = j['AlbumId'] as String? ?? j['ParentId'] as String? ?? j['Id'] as String;
-    final blurMap  = (j['ImageBlurHashes'] as Map?)?['Primary'] as Map?;
-    final blurHash = blurMap != null ? blurMap.values.firstOrNull as String? : null;
-    final ticks    = j['RunTimeTicks'] as int? ?? 0;
+    final albumId   = j['AlbumId'] as String? ?? j['ParentId'] as String? ?? j['Id'] as String;
+    final blurMap   = (j['ImageBlurHashes'] as Map?)?['Primary'] as Map?;
+    final blurHash  = blurMap != null ? blurMap.values.firstOrNull as String? : null;
+    final ticks     = j['RunTimeTicks'] as int? ?? 0;
+    final artistItems = (j['ArtistItems'] as List?)?.cast<Map<String, dynamic>>();
+    final artistId  = artistItems?.firstOrNull?['Id'] as String?
+                      ?? (j['AlbumArtistIds'] as List?)?.firstOrNull as String?;
 
     return VibeTrack(
       id:          j['Id'] as String,
@@ -70,6 +77,7 @@ class VibeTrack {
                      ?? 'Unknown',
       album:       j['Album'] as String? ?? '',
       albumId:     albumId,
+      artistId:    artistId,
       artworkUrl:  JellyfinApi.imageUrl(albumId, size: 600),
       colorUrl:    JellyfinApi.colorExtractionUrl(albumId),
       blurHash:    blurHash,
