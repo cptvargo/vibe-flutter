@@ -8,6 +8,7 @@ import 'audio/audio_handler.dart';
 import 'config/vibe_config.dart';
 import 'navigation/router.dart';
 import 'theme/palette_service.dart';
+import 'services/recently_played_service.dart';
 import 'providers.dart';
 
 Future<void> main() async {
@@ -34,6 +35,7 @@ Future<void> main() async {
   );
 
   await PaletteService.init();
+  await RecentlyPlayedService.init();
 
   final handler = await AudioService.init(
     builder: () => VibeAudioHandler(),

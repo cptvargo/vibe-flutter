@@ -4,6 +4,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../api/jellyfin_models.dart';
 import '../api/jellyfin_api.dart';
+import '../services/recently_played_service.dart';
 
 MediaItem _toMediaItem(VibeTrack t) => MediaItem(
   id:       t.id,
@@ -34,7 +35,8 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   static const _xfadeIntervalMs = 80;  // volume update interval
 
   Timer? _xfadeTimer;
-  bool   _crossfading = false;
+  bool   _crossfading   = false;
+  bool   _loadingTracks = false; // suppresses currentIndexStream during setAudioSources
 
   VibeAudioHandler() {
     _init();
@@ -67,18 +69,29 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         speed:            _player.speed,
       ));
 
-      // When the queue finishes, clear state so mini player disappears
+      // Only clear state when the last track genuinely finishes —
+      // spurious completed events can fire mid-queue during crossfade/seek.
       if (state.processingState == ProcessingState.completed) {
-        Future.delayed(const Duration(milliseconds: 100), () {
-          mediaItem.add(null);
-          queue.add([]);
-        });
+        final idx = _player.currentIndex ?? 0;
+        if (idx >= queue.value.length - 1) {
+          Future.delayed(const Duration(milliseconds: 100), () {
+            mediaItem.add(null);
+            queue.add([]);
+          });
+        }
       }
     });
 
     _player.currentIndexStream.listen((index) {
-      if (index == null) return;
+      if (index == null || _loadingTracks) return;
       final q = queue.value;
+
+      // Report the outgoing track as stopped before switching
+      final prev = mediaItem.value;
+      if (prev != null) {
+        JellyfinApi.reportPlaybackStopped(prev.id, _player.position.inMicroseconds * 10);
+      }
+
       if (index < q.length) {
         mediaItem.add(q[index]);
         _reportProgressStart(q[index].id);
@@ -188,11 +201,16 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   Future<void> playTracks(List<VibeTrack> tracks, {int startIndex = 0}) async {
     await _cancelCrossfade();
-    final sources = tracks.map(_toAudioSource).toList();
-    final items   = tracks.map(_toMediaItem).toList();
+    final sources     = tracks.map(_toAudioSource).toList();
+    final items       = tracks.map(_toMediaItem).toList();
+    final clampedStart = startIndex.clamp(0, items.length - 1);
+    _loadingTracks = true;
     await _player.stop();
     queue.add(items);
-    await _player.setAudioSources(sources, initialIndex: startIndex);
+    mediaItem.add(items[clampedStart]);
+    await _player.setAudioSources(sources, initialIndex: clampedStart);
+    _loadingTracks = false;
+    _reportProgressStart(items[clampedStart].id);
     _player.play(); // intentionally not awaited — play() resolves when audio ends
   }
 
@@ -205,7 +223,13 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override Future<void> play()  => _player.play();
   @override Future<void> pause() => _player.pause();
-  @override Future<void> stop()  => _player.stop();
+  @override Future<void> stop() async {
+    final item = mediaItem.value;
+    if (item != null) {
+      JellyfinApi.reportPlaybackStopped(item.id, _player.position.inMicroseconds * 10);
+    }
+    return _player.stop();
+  }
   @override Future<void> seek(Duration position) => _player.seek(position);
 
   @override
@@ -253,6 +277,24 @@ class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   void _reportProgressStart(String itemId) {
     JellyfinApi.reportPlaybackStart(itemId);
+    // Add to local recently-played history
+    final q = queue.value;
+    final track = q.where((m) => m.id == itemId).firstOrNull;
+    if (track != null) {
+      RecentlyPlayedService.add(VibeTrack(
+        id:         track.id,
+        url:        track.extras?['url'] as String? ?? '',
+        title:      track.title,
+        artist:     track.artist ?? '',
+        album:      track.album  ?? '',
+        albumId:    track.extras?['albumId'] as String?,
+        artworkUrl: track.artUri?.toString() ?? '',
+        colorUrl:   track.extras?['colorUrl'] as String? ?? '',
+        blurHash:   track.extras?['blurHash'] as String?,
+        duration:   track.duration ?? Duration.zero,
+        raw:        {},
+      ));
+    }
   }
 
   AudioPlayer get player => _player;

@@ -28,6 +28,33 @@ class VibeTrack {
     required this.raw,
   });
 
+  factory VibeTrack.fromJson(Map<String, dynamic> j) => VibeTrack(
+    id:         j['id']         as String,
+    url:        j['url']        as String,
+    title:      j['title']      as String,
+    artist:     j['artist']     as String,
+    album:      j['album']      as String,
+    albumId:    j['albumId']    as String?,
+    artworkUrl: j['artworkUrl'] as String,
+    colorUrl:   j['colorUrl']   as String,
+    blurHash:   j['blurHash']   as String?,
+    duration:   Duration(microseconds: j['durationMicros'] as int),
+    raw:        {},
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id':            id,
+    'url':           url,
+    'title':         title,
+    'artist':        artist,
+    'album':         album,
+    'albumId':       albumId,
+    'artworkUrl':    artworkUrl,
+    'colorUrl':      colorUrl,
+    'blurHash':      blurHash,
+    'durationMicros': duration.inMicroseconds,
+  };
+
   factory VibeTrack.fromJellyfin(Map<String, dynamic> j) {
     final albumId = j['AlbumId'] as String? ?? j['ParentId'] as String? ?? j['Id'] as String;
     final blurMap  = (j['ImageBlurHashes'] as Map?)?['Primary'] as Map?;

@@ -43,7 +43,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final handler = ref.read(audioHandlerProvider);
       _completionSub = handler.playbackState.listen((state) {
         if (state.processingState == AudioProcessingState.completed && mounted) {
-          _animateDismiss();
+          // Only dismiss when the last track genuinely finished
+          final idx = handler.player.currentIndex ?? 0;
+          final isLast = idx >= handler.queue.value.length - 1;
+          if (isLast) _animateDismiss();
         }
       });
     });

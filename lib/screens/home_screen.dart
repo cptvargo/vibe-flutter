@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
+import '../services/recently_played_service.dart';
 import '../widgets/artist_avatar.dart';
 import '../theme/vibe_theme.dart';
 
@@ -249,7 +250,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  List<Map<String, dynamic>> _recentTracks = [];
+  List<VibeTrack>            _recentTracks = [];
   List<Map<String, dynamic>> _recentAlbums = [];
   List<Map<String, dynamic>> _topAlbums    = [];
   List<Map<String, dynamic>> _artists      = [];
@@ -260,13 +261,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _loadData();
+    // Rebuild when recently played changes (new track starts)
+    RecentlyPlayedService.stream.listen((_) {
+      if (mounted) setState(() => _recentTracks = RecentlyPlayedService.tracks);
+    });
   }
 
   Future<void> _loadData() async {
     setState(() { _loading = true; _error = null; });
     try {
       final results = await Future.wait([
-        JellyfinApi.getRecentlyPlayed(),
         JellyfinApi.getRecentAlbums(),
         JellyfinApi.getTopAlbums(),
         JellyfinApi.getArtists(),
@@ -274,7 +278,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (!mounted) return;
 
       final seen = <String>{};
-      final artists = (results[3]['Items'] as List? ?? [])
+      final artists = (results[2]['Items'] as List? ?? [])
           .cast<Map<String, dynamic>>()
           .where((a) {
             final name = (a['Name'] as String? ?? '').trim();
@@ -284,9 +288,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           .toList();
 
       setState(() {
-        _recentTracks = (results[0]['Items'] as List? ?? []).cast();
-        _recentAlbums = (results[1]['Items'] as List? ?? []).cast();
-        _topAlbums    = (results[2]['Items'] as List? ?? []).cast();
+        _recentTracks = RecentlyPlayedService.tracks;
+        _recentAlbums = (results[0]['Items'] as List? ?? []).cast();
+        _topAlbums    = (results[1]['Items'] as List? ?? []).cast();
         _artists      = artists;
         _loading      = false;
       });
@@ -313,12 +317,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _playTrack(int index) async {
-    final tracks = _recentTracks.map(VibeTrack.fromJellyfin).toList();
-    if (tracks.isEmpty || !mounted) return;
+    if (_recentTracks.isEmpty || !mounted) return;
     ref.read(playerOpenProvider.notifier).state = true;
-    context.push('/player'); // open instantly
+    context.push('/player');
     ref.read(audioHandlerProvider).playTracks(
-      tracks, startIndex: index.clamp(0, tracks.length - 1),
+      _recentTracks, startIndex: index.clamp(0, _recentTracks.length - 1),
     );
   }
 
@@ -410,7 +413,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         else if (_error != null)
           Positioned.fill(child: _ErrorState(error: _error!, theme: theme, onRetry: _loadData))
         else
-          ListView(
+          RefreshIndicator(
+            onRefresh: _loadData,
+            child: ListView(
             padding: EdgeInsets.only(
               top: 8,
               bottom: MediaQuery.of(context).padding.bottom + 100,
@@ -442,14 +447,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ],
 
-              // Recently Played
+              // Recently Played — sourced from local history, empty until songs play
               if (_recentTracks.isNotEmpty) ...[
                 const SizedBox(height: 28),
                 _SectionHeader(title: 'Recently Played', theme: theme),
                 const SizedBox(height: 8),
                 ..._recentTracks.take(7).toList().asMap().entries.map(
                   (e) => _TrackRow(
-                    track: e.value, theme: theme,
+                    track: {
+                      'Name':        e.value.title,
+                      'AlbumArtist': e.value.artist,
+                      'AlbumId':     e.value.albumId,
+                      'Id':          e.value.id,
+                    },
+                    theme: theme,
                     onPress: () => _playTrack(e.key),
                   ),
                 ),
@@ -516,6 +527,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
               const SizedBox(height: 28),
             ],
+          ),
           ),
       ],
     );
