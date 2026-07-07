@@ -31,15 +31,22 @@ workflows:
           python3 - <<'PY'
           import os, pathlib
           pathlib.Path("lib/config").mkdir(parents=True, exist_ok=True)
+          s   = os.environ["VIBE_SERVER_URL"]
+          a   = os.environ["VIBE_API_KEY"]
+          u   = os.environ["VIBE_USER_ID"]
+          lib = os.environ["VIBE_LIBRARY_ID"]
+          cs  = os.environ["VIBE_COLOR_SERVER"]
+          su  = os.environ["SUPABASE_URL"]
+          sa  = os.environ["SUPABASE_ANON_KEY"]
           content = (
             "class VibeConfig {\n"
-            f"  static const String serverUrl    = '{os.environ[\"VIBE_SERVER_URL\"]}';\n"
-            f"  static const String apiKey       = '{os.environ[\"VIBE_API_KEY\"]}';\n"
-            f"  static const String userId       = '{os.environ[\"VIBE_USER_ID\"]}';\n"
-            f"  static const String vibeLibrary  = '{os.environ[\"VIBE_LIBRARY_ID\"]}';\n"
-            f"  static const String colorServer  = '{os.environ[\"VIBE_COLOR_SERVER\"]}';\n"
-            f"  static const String supabaseUrl  = '{os.environ[\"SUPABASE_URL\"]}';\n"
-            f"  static const String supabaseAnon = '{os.environ[\"SUPABASE_ANON_KEY\"]}';\n"
+            f"  static const String serverUrl    = '{s}';\n"
+            f"  static const String apiKey       = '{a}';\n"
+            f"  static const String userId       = '{u}';\n"
+            f"  static const String vibeLibrary  = '{lib}';\n"
+            f"  static const String colorServer  = '{cs}';\n"
+            f"  static const String supabaseUrl  = '{su}';\n"
+            f"  static const String supabaseAnon = '{sa}';\n"
             "}\n"
           )
           pathlib.Path("lib/config/vibe_config.dart").write_text(content)
