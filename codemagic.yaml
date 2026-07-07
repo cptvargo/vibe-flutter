@@ -10,11 +10,8 @@ workflows:
         bundle_identifier: com.playvibemusic.vibe
       vars:
         BUNDLE_ID: com.playvibemusic.vibe
-        XCODE_SCHEME: Runner
-        XCODE_WORKSPACE: ios/Runner.xcworkspace
       flutter: 3.44.4
       xcode: latest
-      cocoapods: default
 
     triggering:
       events:
@@ -47,36 +44,17 @@ workflows:
       - name: Get Flutter packages
         script: flutter pub get
 
-      - name: Flutter analyze
-        script: flutter analyze --no-pub
+      - name: Set up code signing
+        script: xcode-project use-profiles
 
-      - name: Build iOS release
+      - name: Build IPA
         script: |
-          flutter build ios --release --no-codesign
-
-      - name: Set up code signing and build IPA
-        script: |
-          xcode-project use-profiles
-          cd ios && xcodebuild \
-            -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -archivePath ../build/ios/archive/Runner.xcarchive \
-            archive \
-            CODE_SIGN_STYLE=Manual \
-            | xcpretty
-
-          xcodebuild \
-            -exportArchive \
-            -archivePath ../build/ios/archive/Runner.xcarchive \
-            -exportOptionsPlist /Users/builder/export_options.plist \
-            -exportPath ../build/ios/ipa \
-            | xcpretty
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
 
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-      - flutter_drive.log
 
     publishing:
       app_store_connect:
