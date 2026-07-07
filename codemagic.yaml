@@ -31,19 +31,21 @@ workflows:
           python3 - <<'PY'
           import os, pathlib
           pathlib.Path("lib/config").mkdir(parents=True, exist_ok=True)
-          s   = os.environ["VIBE_SERVER_URL"].strip()
-          a   = os.environ["VIBE_API_KEY"].strip()
-          u   = os.environ["VIBE_USER_ID"].strip()
-          lib = os.environ["VIBE_LIBRARY_ID"].strip()
-          cs  = os.environ["VIBE_COLOR_SERVER"].strip()
-          su  = os.environ["SUPABASE_URL"].strip()
-          sa  = os.environ["SUPABASE_ANON_KEY"].strip()
+          s    = os.environ["VIBE_SERVER_URL"].strip()
+          a    = os.environ["VIBE_API_KEY"].strip()
+          u    = os.environ["VIBE_USER_ID"].strip()
+          lib  = os.environ["VIBE_LIBRARY_ID"].strip()
+          ailib = os.environ["VIBE_AI_LIBRARY_ID"].strip()
+          cs   = os.environ["VIBE_COLOR_SERVER"].strip()
+          su   = os.environ["SUPABASE_URL"].strip()
+          sa   = os.environ["SUPABASE_ANON_KEY"].strip()
           content = (
             "class VibeConfig {\n"
             f"  static const String serverUrl    = '{s}';\n"
             f"  static const String apiKey       = '{a}';\n"
             f"  static const String userId       = '{u}';\n"
             f"  static const String vibeLibrary  = '{lib}';\n"
+            f"  static const String aiLibrary    = '{ailib}';\n"
             f"  static const String colorServer  = '{cs}';\n"
             f"  static const String supabaseUrl  = '{su}';\n"
             f"  static const String supabaseAnon = '{sa}';\n"
