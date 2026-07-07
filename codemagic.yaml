@@ -8,7 +8,6 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.playvibemusic.vibe
-        provisioning_profile: Vibe AppStore
       groups:
         - vibe-secrets
       vars:
