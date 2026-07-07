@@ -59,32 +59,33 @@ class VibeTheme {
 
   // ── Synthwave / AI theme ────────────────────────────────────────────────────
 
-  // Fixed Synthwave base colors
-  static const _swBackground = Color(0xFF080812);
-  static const _swSurface    = Color(0xFF140824);
-  static const _swNeonPink   = Color(0xFFE91E8C);
-  static const _swNeonCyan   = Color(0xFF00E5FF);
-  static const _swTextDim    = Color(0xFFB0A0D0);
-  static const _swTextFaint  = Color(0xFF604080);
+  // RN AI screen exact colors — matches what was in vibe-native
+  static const _swBackground = Color(0xFF04040F);  // RN: #04040f page bg
+  static const _swSurface    = Color(0xFF1A0030);  // RN: #1a0030 card surface
+  static const _swViolet     = Color(0xFF7C3AED);  // RN: #7C3AED primary accent
+  static const _swFuchsia    = Color(0xFFE879F9);  // RN: #E879F9 title glow
+  static const _swTextDim    = Color(0xB8FFFFFF);  // rgba(255,255,255,0.72)
+  static const _swTextFaint  = Color(0x66FFFFFF);  // rgba(255,255,255,0.40)
 
-  // Synthwave theme: fixed dark base + album-art accent blended toward neon pink
+  // Synthwave theme: fixed RN dark base + album-art accent blended toward violet/fuchsia.
+  // VibePalette.fallback already uses #7C3AED so the default renders as pure Synthwave.
   static VibeTheme synthwave(VibePalette p) {
-    final albumAccent = _clampL(p.vibrant, 0.40, 0.70);
-    final albumBright = _clampL(p.lightVibrant, 0.55, 0.85);
-    final accent      = Color.lerp(albumAccent, _swNeonPink, 0.55)!;
-    final accentBright = Color.lerp(albumBright, _swNeonCyan, 0.40)!;
+    final albumAccent  = _clampL(p.vibrant,      0.40, 0.70);
+    final albumBright  = _clampL(p.lightVibrant, 0.55, 0.85);
+    final accent       = Color.lerp(albumAccent, _swViolet,  0.60)!;
+    final accentBright = Color.lerp(albumBright, _swFuchsia, 0.70)!;
 
     return VibeTheme(
       accent:       accent,
       accentBright: accentBright,
       surface:      _swSurface,
       background:   _swBackground,
-      border:       const Color(0xFF8800FF).withAlpha(0x30),
+      border:       _swViolet.withAlpha(0x44),
       textColor:    Colors.white,
       textDim:      _swTextDim,
       textFaint:    _swTextFaint,
       tint1:        _swSurface.withAlpha(0x88),
-      tint2:        const Color(0xFF300060).withAlpha(0x44),
+      tint2:        const Color(0xFF0A0020).withAlpha(0x55),
       textIsLight:  true,
     );
   }

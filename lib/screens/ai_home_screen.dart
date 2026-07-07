@@ -385,8 +385,8 @@ class _AIHomeScreenState extends ConsumerState<AIHomeScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  theme.accent.withAlpha(0x50),
-                  theme.accent.withAlpha(0x18),
+                  theme.accent.withAlpha(0x60),
+                  theme.accent.withAlpha(0x20),
                   Colors.transparent,
                 ],
                 stops: const [0.0, 0.3, 0.7],
