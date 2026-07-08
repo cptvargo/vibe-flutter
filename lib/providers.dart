@@ -19,11 +19,19 @@ final isAIProvider = StateProvider<bool>((ref) => false);
 // Current palette — updated when track changes
 final paletteProvider = StateProvider<VibePalette>((ref) => VibePalette.fallback);
 
-// Current theme — Synthwave when AI track is playing, regular otherwise
+// Current theme — Synthwave when AI tab is active, regular otherwise
 final themeProvider = Provider<VibeTheme>((ref) {
   final palette = ref.watch(paletteProvider);
   final isAI    = ref.watch(isAIProvider);
   return isAI ? VibeTheme.synthwave(palette) : VibeTheme.from(palette);
+});
+
+// Player theme — always palette-based regardless of active tab.
+// Used by MiniPlayer and PlayerScreen so colors follow the playing track,
+// not whichever tab the user has open.
+final playerThemeProvider = Provider<VibeTheme>((ref) {
+  final palette = ref.watch(paletteProvider);
+  return VibeTheme.from(palette);
 });
 
 // Fire Mix — tracks the user has marked as fire; persisted to SharedPreferences

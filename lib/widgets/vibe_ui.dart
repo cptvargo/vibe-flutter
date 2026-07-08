@@ -90,7 +90,7 @@ class _VibeBreathingGlowState extends State<VibeBreathingGlow>
     final bright = widget.colorBright ?? widget.color;
     return AnimatedBuilder(
       animation: _anim,
-      builder: (_, __) {
+      builder: (_, x) {
         final t = _anim.value;
         return SizedBox(
           height: h,

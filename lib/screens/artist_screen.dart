@@ -61,11 +61,12 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme     = ref.watch(themeProvider);
-    final screenW   = MediaQuery.of(context).size.width;
-    final heroH     = 480.0;
-    final cardW     = (screenW - 32 - 12) / 2;   // 2 columns, 12px gap
-    final artUrl    = JellyfinApi.imageUrl(widget.artistId, size: 600);
+    final theme      = ref.watch(themeProvider);
+    final screenW    = MediaQuery.of(context).size.width;
+    final artSize    = screenW;          // square hero art
+    final heroH      = artSize + 88.0;  // art + name below
+    final cardW      = (screenW - 32 - 12) / 2;
+    final artUrl     = JellyfinApi.imageUrl(widget.artistId, size: 600);
     final localAsset = ArtistAvatar.localAssetPath(widget.artistName);
 
     return Scaffold(
@@ -85,7 +86,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                   // Hero image — local asset takes priority over Jellyfin
                   Positioned(
                     top: 0, left: 0, right: 0,
-                    height: screenW,
+                    height: artSize,
                     child: localAsset != null
                         ? Image.asset(localAsset, fit: BoxFit.cover,
                             errorBuilder: (_, _, _) => Container(color: theme.surface))
@@ -97,8 +98,11 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                           ),
                   ),
 
-                  // Gradient overlay: transparent â†’ semi-dark â†’ background
-                  Positioned.fill(
+                  // Gradient: fades art bottom into background
+                  Positioned(
+                    left: 0, right: 0,
+                    top: artSize * 0.55,
+                    height: artSize * 0.45,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -106,39 +110,53 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            Colors.black.withAlpha(0x80),
+                            theme.background.withAlpha(0xCC),
                             theme.background,
                           ],
-                          stops: const [0.3, 0.7, 1.0],
+                          stops: const [0.0, 0.7, 1.0],
                         ),
                       ),
                     ),
                   ),
 
-                  // Back button
+                  // Back + home buttons
                   Positioned(
-                    top: 12,
-                    left: 16,
-                    child: GestureDetector(
-                      onTap: () => context.pop(),
-                      child: Container(
-                        width: 36, height: 36,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.black.withAlpha(0x66),
+                    top: 12, left: 16, right: 16,
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => context.pop(),
+                          child: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.black.withAlpha(0x66),
+                            ),
+                            child: const Icon(Icons.arrow_back_ios_new,
+                                color: Colors.white, size: 18),
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.arrow_back_ios_new,
-                          color: Colors.white,
-                          size: 18,
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () => context.go('/'),
+                          child: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.black.withAlpha(0x66),
+                            ),
+                            child: const Icon(Icons.home_rounded,
+                                color: Colors.white, size: 20),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
 
-                  // Artist name + album count at bottom of hero
+                  // Artist name + album count — below the art, not overlaid on it
                   Positioned(
-                    left: 20, right: 20, bottom: 20,
+                    left: 20, right: 20,
+                    top: artSize + 12,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -146,15 +164,12 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                         Text(
                           widget.artistName,
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 36,
+                            color: theme.textColor,
+                            fontSize: 30,
                             fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
+                            letterSpacing: 0.3,
                             shadows: [
-                              Shadow(
-                                color: theme.accent,
-                                blurRadius: 16,
-                              ),
+                              Shadow(color: theme.accent, blurRadius: 16),
                             ],
                           ),
                         ),
@@ -164,7 +179,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                             child: Text(
                               '${_albums.length} album${_albums.length == 1 ? '' : 's'}',
                               style: TextStyle(
-                                color: theme.accent,
+                                color: theme.accentBright,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 1,

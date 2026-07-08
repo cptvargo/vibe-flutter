@@ -14,7 +14,7 @@ class MiniPlayer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final handler    = ref.read(audioHandlerProvider);
-    final theme      = ref.watch(themeProvider);
+    final theme      = ref.watch(playerThemeProvider);
     final playerOpen = ref.watch(playerOpenProvider);
 
     // Hide while the full player screen is on the stack

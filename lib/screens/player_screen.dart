@@ -116,7 +116,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   Widget build(BuildContext context) {
     final handler   = ref.read(audioHandlerProvider);
-    final theme     = ref.watch(themeProvider);
+    final theme     = ref.watch(playerThemeProvider);
     final screenH   = MediaQuery.of(context).size.height;
     // As the player slides down, the underlying page is revealed
     final revealT   = (_dragOffset / screenH).clamp(0.0, 1.0);

@@ -88,9 +88,9 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     final VibeTheme theme = _albumTheme ?? ref.watch(themeProvider);
     final screenW = MediaQuery.of(context).size.width;
     final artUrl  = JellyfinApi.imageUrl(widget.albumId, size: 600);
-    // Cap art at 460px so the hero doesn't overflow on wide desktop windows
-    final artSize = math.min(screenW, 460.0);
-    final heroH   = artSize + 80.0;
+    // Cap art at 300px — keeps the hero compact so tracks get breathing room
+    final artSize = math.min(screenW * 0.72, 300.0);
+    final heroH   = artSize + 100.0;
 
     return Scaffold(
       backgroundColor: theme.background,
@@ -139,20 +139,37 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                         ),
                       ),
 
-                      // Back button
+                      // Back + home buttons
                       Positioned(
-                        top: 12, left: 16,
-                        child: GestureDetector(
-                          onTap: () => context.pop(),
-                          child: Container(
-                            width: 36, height: 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.black.withAlpha(0x66),
+                        top: 12, left: 16, right: 16,
+                        child: Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () => context.pop(),
+                              child: Container(
+                                width: 36, height: 36,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.black.withAlpha(0x66),
+                                ),
+                                child: const Icon(Icons.arrow_back_ios_new,
+                                    color: Colors.white, size: 18),
+                              ),
                             ),
-                            child: const Icon(Icons.arrow_back_ios_new,
-                                color: Colors.white, size: 18),
-                          ),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => context.go('/'),
+                              child: Container(
+                                width: 36, height: 36,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.black.withAlpha(0x66),
+                                ),
+                                child: const Icon(Icons.home_rounded,
+                                    color: Colors.white, size: 20),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 
