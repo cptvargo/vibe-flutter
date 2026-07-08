@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,8 +53,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     try {
       final isAI   = ref.read(isAIProvider);
       final result = await JellyfinApi.getAlbumTracks(widget.albumId);
-      final items  = ((result['Items'] as List?) ?? [])
-          .cast<Map<String, dynamic>>();
+      final items  = ((result['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       if (mounted) {
         setState(() {
           _tracks  = items.map((j) => VibeTrack.fromJellyfin(j, isAI: isAI)).toList();
@@ -70,7 +68,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   Future<void> _play(int index) async {
     if (_tracks.isEmpty || !mounted) return;
     ref.read(playerOpenProvider.notifier).state = true;
-    context.push('/player'); // open instantly
+    context.push('/player');
     ref.read(audioHandlerProvider).playTracks(
       _tracks,
       startIndex: index.clamp(0, _tracks.length - 1),
@@ -88,112 +86,93 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     final VibeTheme theme = _albumTheme ?? ref.watch(themeProvider);
     final screenW = MediaQuery.of(context).size.width;
     final artUrl  = JellyfinApi.imageUrl(widget.albumId, size: 600);
-    // Cap art at 300px — keeps the hero compact so tracks get breathing room
-    final artSize = math.min(screenW * 0.72, 300.0);
-    final heroH   = artSize + 100.0;
+
+    // 16px margin each side — art feels wide but page never feels cramped
+    const hPad   = 16.0;
+    final artSize = screenW - hPad * 2;
 
     return Scaffold(
       backgroundColor: theme.background,
       body: Stack(
         children: [
+          // ── Scrollable content ───────────────────────────────────────────
           SafeArea(
             bottom: false,
             child: CustomScrollView(
-            slivers: [
+              slivers: [
 
-              // ── Hero ──────────────────────────────────────────────────────
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: heroH, // artSize + 80 (capped so tracks are visible on desktop)
-                  child: Stack(
+                // ── Art + header ───────────────────────────────────────────
+                SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Album art — square fill
-                      Positioned(
-                        top: 0, left: 0, right: 0,
-                        height: artSize,
-                        child: CachedNetworkImage(
-                          imageUrl: artUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, _) =>
-                              Container(color: theme.surface),
-                          errorWidget: (_, _, _) =>
-                              Container(color: theme.surface),
-                        ),
-                      ),
+                      // Room for the floating nav buttons
+                      const SizedBox(height: 60),
 
-                      // Gradient: art → theme.background
-                      Positioned.fill(
-                        child: DecoratedBox(
+                      // Album artwork — square card, centered, with glow shadow
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: hPad),
+                        child: Container(
+                          width: artSize,
+                          height: artSize,
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                theme.accent.withAlpha(0x44),
-                                Colors.black.withAlpha(0x77),
-                                theme.background,
-                              ],
-                              stops: const [0.0, 0.55, 1.0],
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.accent.withAlpha(0x55),
+                                blurRadius: 40,
+                                spreadRadius: 2,
+                                offset: const Offset(0, 12),
+                              ),
+                              BoxShadow(
+                                color: Colors.black.withAlpha(0x77),
+                                blurRadius: 20,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: CachedNetworkImage(
+                              imageUrl: artUrl,
+                              width: artSize,
+                              height: artSize,
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) =>
+                                  Container(color: theme.surface),
+                              errorWidget: (_, _, _) =>
+                                  Container(color: theme.surface),
                             ),
                           ),
                         ),
                       ),
 
-                      // Back + home buttons
-                      Positioned(
-                        top: 12, left: 16, right: 16,
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => context.pop(),
-                              child: Container(
-                                width: 36, height: 36,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.black.withAlpha(0x66),
-                                ),
-                                child: const Icon(Icons.arrow_back_ios_new,
-                                    color: Colors.white, size: 18),
-                              ),
-                            ),
-                            const Spacer(),
-                            GestureDetector(
-                              onTap: () => context.go('/'),
-                              child: Container(
-                                width: 36, height: 36,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.black.withAlpha(0x66),
-                                ),
-                                child: const Icon(Icons.home_rounded,
-                                    color: Colors.white, size: 20),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      const SizedBox(height: 20),
 
-                      // Album info + play button
-                      Positioned(
-                        left: 20, right: 20, bottom: 16,
+                      // Album title + play button — aligned with art edges
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: hPad),
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     widget.albumName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: Colors.white,
-                                      fontSize: 26,
+                                      fontSize: 22,
                                       fontWeight: FontWeight.w800,
-                                      letterSpacing: 0.2,
+                                      letterSpacing: 0.1,
                                       shadows: [
-                                        Shadow(color: theme.accent,
-                                            blurRadius: 12),
+                                        Shadow(
+                                          color: theme.accent,
+                                          blurRadius: 14,
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -207,14 +186,16 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                                         '${_tracks.length == 1 ? 'track' : 'tracks'}',
                                     ].join('  ·  '),
                                     style: TextStyle(
-                                        color: theme.accentBright,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500),
+                                      color: theme.accentBright,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                            // Play all button
+                            const SizedBox(width: 12),
+                            // Play all
                             GestureDetector(
                               onTap: () => _play(0),
                               child: Container(
@@ -225,118 +206,167 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                                   boxShadow: [
                                     BoxShadow(
                                       color: theme.accent.withAlpha(0xAA),
-                                      blurRadius: 20, spreadRadius: 2,
+                                      blurRadius: 20,
+                                      spreadRadius: 2,
                                     ),
                                   ],
                                 ),
-                                child: const Icon(Icons.play_arrow_rounded,
-                                    color: Colors.white, size: 30),
+                                child: const Icon(
+                                  Icons.play_arrow_rounded,
+                                  color: Colors.white,
+                                  size: 30,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
+
+                      const SizedBox(height: 16),
+
+                      // Thin divider between header and track list
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: hPad),
+                        child: Divider(
+                          color: Colors.white.withAlpha(0x18),
+                          height: 1,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              ),
 
-              // ── Track list ─────────────────────────────────────────────────
-              if (_loading)
-                const SliverFillRemaining(
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else ...[
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-                  sliver: SliverToBoxAdapter(
-                    child: Text(
-                      _tracks.length == 1 ? 'Single' : 'Tracks',
-                      style: TextStyle(
-                        color: theme.textColor,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
+                // ── Track list ─────────────────────────────────────────────
+                if (_loading)
+                  const SliverFillRemaining(
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else ...[
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) {
+                        final track = _tracks[i];
+                        return GestureDetector(
+                          onTap: () => _play(i),
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                                hPad, 0, hPad, 0),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              child: Row(
+                                children: [
+                                  // Track number
+                                  SizedBox(
+                                    width: 24,
+                                    child: Text(
+                                      '${i + 1}',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          color: theme.textFaint,
+                                          fontSize: 13),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  // Title + featured artist
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          track.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: theme.textColor,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (track.artist.isNotEmpty &&
+                                            track.artist != widget.artistName)
+                                          Text(
+                                            track.artist,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                                color: theme.textDim,
+                                                fontSize: 12),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Duration
+                                  Text(
+                                    _fmt(track.duration),
+                                    style: TextStyle(
+                                        color: theme.textFaint, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      childCount: _tracks.length,
                     ),
                   ),
-                ),
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) {
-                      final track = _tracks[i];
-                      return GestureDetector(
-                        onTap: () => _play(i),
-                        behavior: HitTestBehavior.opaque,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12),
-                          child: Row(
-                            children: [
-                              // Track number
-                              SizedBox(
-                                width: 28,
-                                child: Text(
-                                  '${i + 1}',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      color: theme.textFaint, fontSize: 13),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              // Title + artist
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      track.title,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: theme.textColor,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    if (track.artist.isNotEmpty &&
-                                        track.artist != widget.artistName)
-                                      Text(
-                                        track.artist,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                            color: theme.textDim,
-                                            fontSize: 12),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              // Duration
-                              Text(
-                                _fmt(track.duration),
-                                style: TextStyle(
-                                    color: theme.textFaint, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                    childCount: _tracks.length,
-                  ),
-                ),
-                // Bottom padding so content clears the MiniPlayer
-                const SliverPadding(
-                    padding: EdgeInsets.only(bottom: 100)),
+                  const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+                ],
               ],
-            ],
-          ),
+            ),
           ), // SafeArea
 
-          // MiniPlayer — floats above content (outside MainShell on this route)
+          // ── Floating nav buttons ─────────────────────────────────────────
+          // Separate SafeArea overlay so they sit above the scroll content
+          // without pushing the art down or creating dead space.
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  _NavButton(
+                    icon: Icons.arrow_back_ios_new,
+                    size: 18,
+                    onTap: () => context.pop(),
+                  ),
+                  const Spacer(),
+                  _NavButton(
+                    icon: Icons.home_rounded,
+                    size: 20,
+                    onTap: () => context.go('/'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // MiniPlayer
           const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
         ],
       ),
     );
   }
+}
+
+class _NavButton extends StatelessWidget {
+  final IconData icon;
+  final double   size;
+  final VoidCallback onTap;
+  const _NavButton({required this.icon, required this.size, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 36, height: 36,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.black.withAlpha(0x66),
+      ),
+      child: Icon(icon, color: Colors.white, size: size),
+    ),
+  );
 }
