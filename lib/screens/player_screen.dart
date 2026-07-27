@@ -922,7 +922,7 @@ class _QueueSheet extends StatelessWidget {
                             style: TextStyle(color: Colors.white.withAlpha(0x66), fontSize: 13),
                           ),
                           trailing: isCurrent
-                              ? Icon(Icons.equalizer_rounded, color: theme.accentBright, size: 20)
+                              ? _AnimatedEqualizer(color: theme.accentBright)
                               : null,
                           onTap: () {
                             handler.skipToQueueItem(i);
@@ -941,6 +941,58 @@ class _QueueSheet extends StatelessWidget {
       },
     );
   }
+}
+
+// ── Animated equalizer — now-playing indicator in queue list ────────────────
+class _AnimatedEqualizer extends StatefulWidget {
+  final Color color;
+  const _AnimatedEqualizer({required this.color});
+  @override
+  State<_AnimatedEqualizer> createState() => _AnimatedEqualizerState();
+}
+
+class _AnimatedEqualizerState extends State<_AnimatedEqualizer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat();
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, _) {
+        final t  = _ctrl.value * 2 * pi;
+        final h1 = 3 + 11 * ((sin(t * 1.10)       + 1) / 2);
+        final h2 = 3 + 11 * ((sin(t * 0.85 + 1.0) + 1) / 2);
+        final h3 = 3 + 11 * ((sin(t * 1.30 + 2.1) + 1) / 2);
+        return SizedBox(
+          width: 16, height: 14,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [_bar(h1), _bar(h2), _bar(h3)],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _bar(double h) => Container(
+    width: 3, height: h,
+    decoration: BoxDecoration(
+      color: widget.color,
+      borderRadius: BorderRadius.circular(1.5),
+    ),
+  );
 }
 
 // ── Glass button palette ─────────────────────────────────────────────────────

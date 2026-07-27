@@ -64,11 +64,16 @@ class _NavRow extends StatelessWidget {
               TextSpan(
                 text: 'Vi',
                 style: TextStyle(
-                  color: theme.accentBright.withAlpha(0xAA),
+                  color: theme.accentBright,
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 2,
-                  shadows: [Shadow(color: theme.accent, blurRadius: 10)],
+                  shadows: [
+                    // Tight at-surface light — the letters themselves are the source
+                    Shadow(color: theme.accentBright.withAlpha(0xCC), blurRadius: 4),
+                    // Wider ambient spill — light bleeding onto the surface behind
+                    Shadow(color: theme.accent.withAlpha(0x55), blurRadius: 20),
+                  ],
                 ),
               ),
               TextSpan(
@@ -78,7 +83,10 @@ class _NavRow extends StatelessWidget {
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 2,
-                  shadows: [Shadow(color: theme.accent, blurRadius: 10)],
+                  shadows: [
+                    Shadow(color: theme.accentBright.withAlpha(0xCC), blurRadius: 4),
+                    Shadow(color: theme.accent.withAlpha(0x55), blurRadius: 20),
+                  ],
                 ),
               ),
             ]),
