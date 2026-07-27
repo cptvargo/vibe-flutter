@@ -685,9 +685,11 @@ class _Content extends ConsumerWidget {
                       _WaveformSeekBar(
                         progress: progress,
                         trackId: item.id,
-                        activeColor:    ambient.playButtonColor,
-                        activeColorEnd: ambient.waveformActive,
-                        inactiveColor:  ambient.waveformInactive,
+                        colorAnchor: ambient.waveformAnchor,
+                        colorMid:    ambient.playButtonColor,
+                        colorEnd:    ambient.waveformActive,
+                        colorTail:   ambient.waveformTail,
+                        inactiveColor: ambient.waveformInactive,
                         onSeek: (ratio) => handler.seek(Duration(
                           milliseconds: (ratio * dur.inMilliseconds).round(),
                         )),
@@ -712,37 +714,76 @@ class _Content extends ConsumerWidget {
                       ),
                       const SizedBox(height: 20),
 
-                      // Main controls: prev / play+pause / next
+                      // Single transport row: shuffle | prev | play | next | repeat
+                      // Prev/next/shuffle/repeat are bare icons (Spotify-style).
+                      // Only the play button keeps the glass material.
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _GlassTransportButton(
+                          StreamBuilder<bool>(
+                            stream: handler.shuffleModeEnabledStream,
+                            builder: (_, snap) {
+                              final on = snap.data ?? false;
+                              return _PlainIconButton(
+                                icon: Icons.shuffle_rounded,
+                                iconSize: 22,
+                                active: on,
+                                inactiveColor: Color.lerp(Colors.white, ambient.waveformActive, 0.08)!.withAlpha(0xBB),
+                                activeColor: ambient.waveformActive,
+                                onTap: () => handler.setShuffleMode(
+                                  on ? AudioServiceShuffleMode.none : AudioServiceShuffleMode.all,
+                                ),
+                              );
+                            },
+                          ),
+                          _PlainIconButton(
                             icon: Icons.skip_previous_rounded,
-                            size: 54, iconSize: 28,
-                            intensity: 0.65,
-                            palette: palette,
+                            iconSize: 30,
+                            inactiveColor: Colors.white.withAlpha(0xDD),
+                            activeColor: ambient.waveformActive,
                             onTap: handler.skipToPrevious,
                           ),
                           _GlassTransportButton(
-                            icon: isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                            size: 72, iconSize: 38,
+                            icon: Icons.play_arrow_rounded,
+                            size: 72, iconSize: 34,
                             intensity: 1.0,
                             palette: palette,
+                            customIcon: isPlaying ? const _ThinPauseIcon(height: 20) : null,
                             onTap: () => isPlaying ? handler.pause() : handler.play(),
                           ),
-                          _GlassTransportButton(
+                          _PlainIconButton(
                             icon: Icons.skip_next_rounded,
-                            size: 54, iconSize: 28,
-                            intensity: 0.65,
-                            palette: palette,
+                            iconSize: 30,
+                            inactiveColor: Colors.white.withAlpha(0xDD),
+                            activeColor: ambient.waveformActive,
                             onTap: handler.skipToNext,
+                          ),
+                          StreamBuilder<LoopMode>(
+                            stream: handler.loopModeStream,
+                            builder: (_, snap) {
+                              final loop = snap.data ?? LoopMode.off;
+                              return _PlainIconButton(
+                                icon: loop == LoopMode.one
+                                    ? Icons.repeat_one_rounded
+                                    : Icons.repeat_rounded,
+                                iconSize: 22,
+                                active: loop != LoopMode.off,
+                                inactiveColor: Color.lerp(Colors.white, ambient.waveformActive, 0.08)!.withAlpha(0xBB),
+                                activeColor: ambient.waveformActive,
+                                onTap: () => handler.setRepeatMode(switch (loop) {
+                                  LoopMode.off => AudioServiceRepeatMode.all,
+                                  LoopMode.all => AudioServiceRepeatMode.one,
+                                  _            => AudioServiceRepeatMode.none,
+                                }),
+                              );
+                            },
                           ),
                         ],
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 4),
 
-                      // Secondary: shuffle / repeat / queue
-                      _SecondaryControls(handler: handler, theme: theme, palette: palette),
+                      // Queue icon — right-aligned below transport
+                      _SecondaryControls(handler: handler, theme: theme),
                     ],
                   );
                 },
@@ -755,76 +796,29 @@ class _Content extends ConsumerWidget {
   }
 }
 
-// ── Shuffle + repeat + queue row ────────────────────────────────────────────
+// ── Queue button row (right-aligned, below transport) ───────────────────────
 class _SecondaryControls extends StatelessWidget {
-  final VibeAudioHandler    handler;
-  final VibeTheme           theme;
-  final _GlassButtonPalette palette;
-  const _SecondaryControls({
-    required this.handler,
-    required this.theme,
-    required this.palette,
-  });
+  final VibeAudioHandler handler;
+  final VibeTheme        theme;
+
+  const _SecondaryControls({required this.handler, required this.theme});
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<bool>(
-      stream: handler.shuffleModeEnabledStream,
-      builder: (context, shuffleSnap) {
-        final shuffleOn = shuffleSnap.data ?? false;
-        return StreamBuilder<LoopMode>(
-          stream: handler.loopModeStream,
-          builder: (context, loopSnap) {
-            final loop = loopSnap.data ?? LoopMode.off;
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _GlassTransportButton(
-                  icon: Icons.shuffle_rounded,
-                  size: 44, iconSize: 20,
-                  intensity: 0.45,
-                  palette: palette,
-                  active:  shuffleOn,
-                  onTap: () => handler.setShuffleMode(
-                    shuffleOn
-                        ? AudioServiceShuffleMode.none
-                        : AudioServiceShuffleMode.all,
-                  ),
-                ),
-                _GlassTransportButton(
-                  icon: loop == LoopMode.one
-                      ? Icons.repeat_one_rounded
-                      : Icons.repeat_rounded,
-                  size: 44, iconSize: 20,
-                  intensity: 0.45,
-                  palette: palette,
-                  active:  loop != LoopMode.off,
-                  onTap: () {
-                    final next = switch (loop) {
-                      LoopMode.off => AudioServiceRepeatMode.all,
-                      LoopMode.all => AudioServiceRepeatMode.one,
-                      _            => AudioServiceRepeatMode.none,
-                    };
-                    handler.setRepeatMode(next);
-                  },
-                ),
-                _GlassTransportButton(
-                  icon: Icons.queue_music_rounded,
-                  size: 44, iconSize: 20,
-                  intensity: 0.45,
-                  palette: palette,
-                  onTap: () => showModalBottomSheet(
-                    context: context,
-                    backgroundColor: Colors.transparent,
-                    isScrollControlled: true,
-                    builder: (_) => _QueueSheet(handler: handler, theme: theme),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        IconButton(
+          icon: Icon(Icons.queue_music_rounded,
+              color: Colors.white.withAlpha(0x77), size: 22),
+          onPressed: () => showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            isScrollControlled: true,
+            builder: (_) => _QueueSheet(handler: handler, theme: theme),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -973,202 +967,210 @@ class _GlassButtonPalette {
   );
 }
 
-// ── Glass transport button ──────────────────────────────────────────────────
-// Unified material for all playback controls. 6-layer compositing model:
-//   1. Room glow    — 3 BoxShadow halos in core / mid / highlight (distinct tones)
-//   2. Glass body   — BackdropFilter blur: the material itself
-//   3. Illumination — 5-stop RadialGradient: highlight → core → blend → mid
-//   4. Specular     — white crescent at upper third (convex lens reflection)
-//   5. Inner shadow — lower hemisphere darkening (lens thickness / depth)
-//   6. Icon
-//
-// [intensity] scales all optical parameters: 0.45 = secondary, 0.65 = skip, 1.0 = play.
-// [active]    shifts illumination toward highlight, making the state unmistakable.
+// ── Album-gradient play button ──────────────────────────────────────────────
+// Bold, album-driven color button. The album IS the button.
+// 4-layer model:
+//   1. Room glow    — 3 BoxShadow halos (core / mid / highlight)
+//   2. Gradient body — diagonal LinearGradient: highlight → core → deep anchor
+//   3. Center bloom  — radial white overlay for perceived depth / lit-from-within
+//   4. Bottom shadow — subtle darkening for volume
+//   5. Icon          — pure white, crisp
 class _GlassTransportButton extends StatelessWidget {
   final IconData            icon;
   final double              size;
   final double              iconSize;
   final double              intensity;
   final _GlassButtonPalette palette;
-  final bool                active;
+  final Widget?             customIcon;
   final VoidCallback?       onTap;
 
   const _GlassTransportButton({
     required this.icon,
     required this.palette,
-    this.size      = 48,
-    this.iconSize  = 22,
-    this.intensity = 0.65,
-    this.active    = false,
+    this.size       = 48,
+    this.iconSize   = 22,
+    this.intensity  = 0.65,
+    this.customIcon,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Active: inner core shifts toward highlight (brighter, lighter hue).
-    // This makes active shuffle/repeat glow distinctly without changing the palette.
-    final Color illumInner = active
-        ? Color.lerp(palette.highlight, Colors.white, 0.20)!
-        : Color.lerp(palette.highlight, palette.core,  0.30)!;
-    final Color illumCore  = active ? palette.highlight : palette.core;
-    final Color illumBlend = Color.lerp(palette.core, palette.mid, 0.50)!;
-    final Color glowLead   = active ? palette.highlight : palette.core;
+    // Deep anchor: darkens palette toward black for gradient contrast at edge
+    final Color dark = Color.lerp(palette.core, Colors.black, 0.42)!;
 
-    // Icon is near-white with a subtle palette tint — stays readable at any size.
-    // Active: fully highlight-colored so the state reads without needing the icon label.
-    final Color iconColor = active
-        ? palette.highlight
-        : Color.lerp(Colors.white, palette.highlight, 0.15)!;
+    // Room glow halos — three palette tones at expanding radii
+    final int gA1 = (0x55 * intensity).round().clamp(0, 255);
+    final int gA2 = (0x33 * intensity).round().clamp(0, 255);
+    final int gA3 = (0x1A * intensity).round().clamp(0, 255);
 
-    // Opacity values all scale linearly with intensity.
-    // Room glow
-    final int gA1  = (0x40 * intensity).round().clamp(0, 255); // core halo — tight
-    final int gA2  = (0x29 * intensity).round().clamp(0, 255); // mid halo
-    final int gA3  = (0x14 * intensity).round().clamp(0, 255); // highlight halo — wide
-    // Internal illumination — 4 alpha stops across 5 color stops
-    final int ilA1 = (0xE6 * intensity).round().clamp(0, 255); // 90% — inner bright core
-    final int ilA2 = (0xB3 * intensity).round().clamp(0, 255); // 70% — primary color band
-    final int ilA3 = (0x73 * intensity).round().clamp(0, 255); // 45% — blend transition
-    final int ilA4 = (0x33 * intensity).round().clamp(0, 255); // 20% — outer edge fade
-    // Specular
-    final int spA1 = (0x59 * intensity).round().clamp(0, 255); // 35% — crescent center
-    final int spA2 = (0x1E * intensity).round().clamp(0, 255); // 12% — crescent edge
+    // Gradient circle slightly inset from tap target — breathing room around icon
+    final double gradSize = size * 0.62;
 
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
+      child: SizedBox(
+        width: size, height: size,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
 
-          // ── Layer 1: Room glow ──────────────────────────────────────────
-          // Each BoxShadow uses a DIFFERENT palette color at a different radius.
-          // core (tight) bleeds into the scene first; highlight (wide) fills the room.
-          // Three concentric halos in three tones = the glow reads as chromatic light,
-          // not a single-color circle.
-          SizedBox(
-            width: size, height: size,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.transparent,
-                boxShadow: [
-                  BoxShadow(
-                    color: glowLead.withAlpha(gA1),
-                    blurRadius: 34 * intensity,
-                    spreadRadius: 2 * intensity,
-                  ),
-                  BoxShadow(
-                    color: palette.mid.withAlpha(gA2),
-                    blurRadius: 72 * intensity,
-                    spreadRadius: 12 * intensity,
-                  ),
-                  BoxShadow(
-                    color: palette.highlight.withAlpha(gA3),
-                    blurRadius: 120 * intensity,
-                    spreadRadius: 26 * intensity,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Layer 2: Glass body ─────────────────────────────────────────
-          // BackdropFilter samples the ambient scene behind this button —
-          // the three-layer ambient glow and blurred artwork color.
-          // The glass literally contains the room's light: not painted, sampled.
-          ClipOval(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                width: size, height: size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withAlpha(0x0D),   // 5% tint — glass is transparent
-                  border: Border.all(
-                    color: Colors.white.withAlpha(0x2E), // 18% rim
-                    width: 1.2,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // ── Layer 3: Internal illumination ──────────────────────────────
-          // Five color stops blend illumInner → illumCore → illumBlend → mid → transparent.
-          // The center is the brightest and most mixed (near-white blended with highlight).
-          // Moving outward, the gradient passes through core → blend → mid before fading.
-          // At any given album, THREE DISTINCT TONES are visible simultaneously inside
-          // the glass — this is the difference between a tinted circle and a crystal lens.
-          IgnorePointer(
-            child: SizedBox(
-              width: size, height: size,
+            // ── Room glow ───────────────────────────────────────────────
+            Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    center: const Alignment(0.0, 0.18),
-                    radius: 0.95,
-                    colors: [
-                      illumInner.withAlpha(ilA1),
-                      illumCore.withAlpha(ilA2),
-                      illumBlend.withAlpha(ilA3),
-                      palette.mid.withAlpha(ilA4),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.28, 0.55, 0.80, 1.0],
-                  ),
+                  color: Colors.transparent,
+                  boxShadow: [
+                    BoxShadow(
+                      color: palette.core.withAlpha(gA1),
+                      blurRadius: 34 * intensity,
+                      spreadRadius: 2  * intensity,
+                    ),
+                    BoxShadow(
+                      color: palette.mid.withAlpha(gA2),
+                      blurRadius: 72  * intensity,
+                      spreadRadius: 12 * intensity,
+                    ),
+                    BoxShadow(
+                      color: palette.highlight.withAlpha(gA3),
+                      blurRadius: 120 * intensity,
+                      spreadRadius: 26 * intensity,
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
 
-          // ── Layer 4: Specular highlight ─────────────────────────────────
-          // Origin at Alignment(0, -2.4) — far above the button — sweeps a
-          // crescent arc across the upper third. Physically correct for a convex lens.
-          IgnorePointer(
-            child: SizedBox(
-              width: size, height: size,
+            // ── Gradient body ────────────────────────────────────────────
+            // Diagonal sweep: lightVibrant (top-left) → vibrant → deep anchor (bottom-right).
+            // Three distinct palette tones — every album produces a unique combination.
+            SizedBox(
+              width: gradSize, height: gradSize,
               child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    center: const Alignment(0.0, -2.4),
-                    radius: 2.10,
-                    colors: [
-                      Colors.white.withAlpha(spA1),
-                      Colors.white.withAlpha(spA2),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.38, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // ── Layer 5: Inner shadow ────────────────────────────────────────
-          // Rear face of the lens in shadow — implies thickness, creates depth.
-          IgnorePointer(
-            child: SizedBox(
-              width: size, height: size,
-              child: const DecoratedBox(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Color(0x22000000)],
-                    stops: [0.40, 1.0],
+                    begin: const Alignment(-0.9, -0.9),
+                    end:   const Alignment( 0.9,  0.9),
+                    colors: [palette.highlight, palette.core, dark],
+                    stops: const [0.0, 0.46, 1.0],
                   ),
                 ),
               ),
             ),
-          ),
 
-          // ── Layer 6: Icon ────────────────────────────────────────────────
-          Icon(icon, color: iconColor, size: iconSize),
-        ],
+            // ── Center bloom ─────────────────────────────────────────────
+            // Soft white at center creates a "lit from within" depth — the button
+            // reads as a light source, not a flat disc.
+            IgnorePointer(
+              child: SizedBox(
+                width: gradSize, height: gradSize,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      radius: 0.60,
+                      colors: [Colors.white.withAlpha(0x38), Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Bottom depth shadow ──────────────────────────────────────
+            // Darkens the lower edge to give the button perceived curvature.
+            IgnorePointer(
+              child: SizedBox(
+                width: gradSize, height: gradSize,
+                child: const DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end:   Alignment.bottomCenter,
+                      colors: [Colors.transparent, Color(0x44000000)],
+                      stops: [0.45, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Icon ─────────────────────────────────────────────────────
+            customIcon ?? Icon(icon, color: Colors.white, size: iconSize),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Thin pause bars ─────────────────────────────────────────────────────────
+// Custom pause icon with slim rounded bars — thinner than any Material icon.
+class _ThinPauseIcon extends StatelessWidget {
+  final double height;
+  const _ThinPauseIcon({this.height = 20});
+
+  @override
+  Widget build(BuildContext context) {
+    final barW = (height * 0.16).clamp(2.5, 4.0);
+    final gap  = height * 0.30;
+    final radius = Radius.circular(barW / 2);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: barW, height: height,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.all(radius),
+          ),
+        ),
+        SizedBox(width: gap),
+        Container(
+          width: barW, height: height,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.all(radius),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Plain icon button (no glass) ────────────────────────────────────────────
+// Used for prev, next, shuffle, repeat — Spotify-style: bare icon, no circle.
+// Inactive: near-white with a subtle palette tint so icons feel "of" the album.
+// Active:   full waveformActive (lightVibrant) — state is unmistakable.
+class _PlainIconButton extends StatelessWidget {
+  final IconData      icon;
+  final double        iconSize;
+  final bool          active;
+  final Color         inactiveColor;
+  final Color         activeColor;
+  final VoidCallback? onTap;
+
+  const _PlainIconButton({
+    required this.icon,
+    required this.inactiveColor,
+    required this.activeColor,
+    this.iconSize = 26,
+    this.active   = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Icon(icon, size: iconSize,
+            color: active ? activeColor : inactiveColor),
       ),
     );
   }
@@ -1178,16 +1180,20 @@ class _GlassTransportButton extends StatelessWidget {
 class _WaveformSeekBar extends StatelessWidget {
   final double progress; // 0.0 – 1.0
   final String trackId;
-  final Color  activeColor;
-  final Color  activeColorEnd;
+  final Color  colorAnchor;   // darkVibrant  — deep start
+  final Color  colorMid;      // vibrant      — main energy
+  final Color  colorEnd;      // lightVibrant — bright bloom
+  final Color  colorTail;     // muted        — soft resolution
   final Color  inactiveColor;
-  final ValueChanged<double> onSeek; // emits ratio 0.0 – 1.0
+  final ValueChanged<double> onSeek;
 
   const _WaveformSeekBar({
     required this.progress,
     required this.trackId,
-    required this.activeColor,
-    required this.activeColorEnd,
+    required this.colorAnchor,
+    required this.colorMid,
+    required this.colorEnd,
+    required this.colorTail,
     required this.inactiveColor,
     required this.onSeek,
   });
@@ -1210,12 +1216,13 @@ class _WaveformSeekBar extends StatelessWidget {
         width: double.infinity,
         child: CustomPaint(
           painter: _WaveformPainter(
-            progress:       progress,
-            activeColor:    activeColor,
-            activeColorEnd: activeColorEnd,
-            inactiveColor:  inactiveColor,
+            progress:     progress,
+            colorAnchor:  colorAnchor,
+            colorMid:     colorMid,
+            colorEnd:     colorEnd,
+            colorTail:    colorTail,
+            inactiveColor: inactiveColor,
           ),
-          // Pass trackId in as a key so the painter knows which heights to use
           key: ValueKey(trackId),
         ),
       ),
@@ -1225,41 +1232,53 @@ class _WaveformSeekBar extends StatelessWidget {
 
 class _WaveformPainter extends CustomPainter {
   final double progress;
-  final Color  activeColor;
-  final Color  activeColorEnd;
+  final Color  colorAnchor;  // darkVibrant — deep start
+  final Color  colorMid;     // vibrant — main energy
+  final Color  colorEnd;     // lightVibrant — bright bloom
+  final Color  colorTail;    // muted — soft resolution
   final Color  inactiveColor;
 
-  // Heights shared across repaints via the ValueKey — set once per track
   static final Map<Key, List<double>> _heightCache = {};
 
   const _WaveformPainter({
     required this.progress,
-    required this.activeColor,
-    required this.activeColorEnd,
+    required this.colorAnchor,
+    required this.colorMid,
+    required this.colorEnd,
+    required this.colorTail,
     required this.inactiveColor,
   });
 
   static List<double> _buildHeights(int seed, int count) {
     final rng = Random(seed);
     return List.generate(count, (i) {
-      // Bell-curve envelope: centre bars taller, edges shorter
-      final t      = (i / (count - 1)) * 2 - 1; // -1 … +1
-      final env    = 1.0 - t * t * 0.45;
+      final t   = (i / (count - 1)) * 2 - 1;
+      final env = 1.0 - t * t * 0.45;
       return (env * (0.35 + rng.nextDouble() * 0.65)).clamp(0.08, 1.0);
     });
   }
 
+  // 4-stop gradient: anchor → mid → end → tail, mapped across 0.0–1.0
+  Color _gradientAt(double t) {
+    if (t < 0.33) {
+      return Color.lerp(colorAnchor, colorMid, t / 0.33)!;
+    } else if (t < 0.67) {
+      return Color.lerp(colorMid, colorEnd, (t - 0.33) / 0.34)!;
+    } else {
+      return Color.lerp(colorEnd, colorTail, (t - 0.67) / 0.33)!;
+    }
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    const barCount = 55;
-    const gap      = 2.5;
-    final barW     = (size.width - (barCount - 1) * gap) / barCount;
-    final maxH     = size.height;
+    const barCount  = 55;
+    const gap       = 2.5;
+    final barW      = (size.width - (barCount - 1) * gap) / barCount;
+    final maxH      = size.height;
     final progressX = progress * size.width;
 
-    // Build heights lazily — cached for the lifetime of this key
-    final cacheKey  = Object.hashAll([size.width.round(), barCount]);
-    final heights   = _WaveformPainter._heightCache.putIfAbsent(
+    final cacheKey = Object.hashAll([size.width.round(), barCount]);
+    final heights  = _WaveformPainter._heightCache.putIfAbsent(
       ValueKey(cacheKey),
       () => _buildHeights(cacheKey, barCount),
     );
@@ -1270,16 +1289,18 @@ class _WaveformPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     for (int i = 0; i < barCount; i++) {
-      final x       = i * (barW + gap);
-      final barH    = heights[i] * maxH;
-      final y       = (maxH - barH) / 2;
-      final midX    = x + barW / 2;
+      final x        = i * (barW + gap);
+      final barH     = heights[i] * maxH;
+      final y        = (maxH - barH) / 2;
+      final midX     = x + barW / 2;
       final isActive = midX <= progressX;
 
       if (isActive) {
-        // Two-color palette gradient: vibrant at left → lightVibrant at right.
-        // Connects the waveform visually to the ambient lighting and artwork.
-        activePaint.color = Color.lerp(activeColor, activeColorEnd, midX / size.width)!;
+        // 4-stop palette gradient gives each album a color fingerprint.
+        // Height-based brightness: tall bars (loud moments) pull ~14% toward white —
+        // the waveform shape of each track becomes visually encoded in the color.
+        final base = _gradientAt(midX / size.width);
+        activePaint.color = Color.lerp(base, Colors.white, heights[i] * 0.14)!;
       }
 
       canvas.drawRRect(
@@ -1294,7 +1315,9 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WaveformPainter old) =>
-      progress != old.progress ||
-      activeColor    != old.activeColor ||
-      activeColorEnd != old.activeColorEnd;
+      progress     != old.progress     ||
+      colorAnchor  != old.colorAnchor  ||
+      colorMid     != old.colorMid     ||
+      colorEnd     != old.colorEnd     ||
+      colorTail    != old.colorTail;
 }
