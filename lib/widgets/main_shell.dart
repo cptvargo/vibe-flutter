@@ -51,12 +51,31 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ref.watch(themeProvider);
+    final theme   = ref.watch(themeProvider);
+    final ambient = ref.watch(ambientThemeProvider);
 
     return Scaffold(
       backgroundColor: theme.background,
       body: Stack(
         children: [
+          // Ambient layer — soft radial glow at the top, connects home to the player.
+          // Very low opacity (0x1A = 10%) so it influences without distracting.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.topCenter,
+                    radius: 1.8,
+                    colors: [
+                      ambient.glowColor.withAlpha(0x1A),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           Column(
             children: [
               TopNav(

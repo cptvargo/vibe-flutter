@@ -46,10 +46,10 @@ class _Bar extends StatelessWidget {
         final isPlaying = statSnap.data?.playing ?? false;
 
         return StreamBuilder<Duration>(
-          stream: handler.player.positionStream,
+          stream: handler.positionStream,
           builder: (context, posSnap) {
             final pos      = posSnap.data ?? Duration.zero;
-            final dur      = handler.player.duration ?? Duration.zero;
+            final dur      = handler.duration ?? Duration.zero;
             final progress = dur.inMilliseconds > 0
                 ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
                 : 0.0;

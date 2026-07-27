@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api/jellyfin_models.dart';
 import 'audio/audio_handler.dart';
 import 'services/fire_mix_service.dart';
+import 'theme/ambient_theme.dart';
 import 'theme/palette_service.dart';
 import 'theme/vibe_theme.dart';
 
@@ -32,6 +33,11 @@ final themeProvider = Provider<VibeTheme>((ref) {
 final playerThemeProvider = Provider<VibeTheme>((ref) {
   final palette = ref.watch(paletteProvider);
   return VibeTheme.from(palette);
+});
+
+// Ambient theme — rich multi-color palette for premium visual effects in the player
+final ambientThemeProvider = Provider<AmbientTheme>((ref) {
+  return AmbientTheme.from(ref.watch(paletteProvider));
 });
 
 // Fire Mix — tracks the user has marked as fire; persisted to SharedPreferences

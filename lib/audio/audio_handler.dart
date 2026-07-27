@@ -6,6 +6,17 @@ import '../api/jellyfin_models.dart';
 import '../api/jellyfin_api.dart';
 import '../services/recently_played_service.dart';
 
+// ─── Playback mode ─────────────────────────────────────────────────────────────
+// Only crossfade is implemented now. The enum exists so Smart/Gapless modes
+// can be wired in later without changing the public API.
+enum PlaybackMode {
+  none,      // hard cut (future: silence between tracks)
+  gapless,   // no gap, no overlap (future: live albums, DJ mixes)
+  crossfade, // equal-power overlap — active implementation
+  smart,     // auto-select by media type (future)
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 MediaItem _toMediaItem(VibeTrack t) => MediaItem(
   id:       t.id,
   title:    t.title,
@@ -13,7 +24,7 @@ MediaItem _toMediaItem(VibeTrack t) => MediaItem(
   album:    t.album,
   duration: t.duration,
   artUri:   Uri.parse(t.artworkUrl),
-  extras:   {
+  extras: {
     'url':            t.url,
     'albumId':        t.albumId,
     'artistId':       t.artistId,
@@ -24,262 +35,494 @@ MediaItem _toMediaItem(VibeTrack t) => MediaItem(
   },
 );
 
-AudioSource _toAudioSource(VibeTrack t) => AudioSource.uri(
-  Uri.parse(t.url),
-  tag: _toMediaItem(t),
-);
+// ─── Playback engine ───────────────────────────────────────────────────────────
+//
+// Architecture: dual-player, Dart-managed queue.
+//
+// Two physical AudioPlayers swap roles after each crossfade:
+//
+//   _primary   — the track the user currently hears (volume 1.0)
+//   _secondary — preloading/playing the next track (volume 0→1 during fade)
+//
+// The queue is a plain Dart List<MediaItem>. Neither player ever uses
+// ConcatenatingAudioSource. Each player holds exactly one source at a time.
+//
+// This eliminates the native decoder-flush click that occurs when just_audio's
+// ConcatenatingAudioSource auto-advances: with our architecture the outgoing
+// decoder drains silently to 0 before being stopped, and the incoming decoder
+// has been running for seconds before the user hears it — no transient is
+// possible.
+//
+// UI code must only subscribe to the stable forwarding streams on this class
+// (positionStream, durationStream, etc.) — never to individual AudioPlayer
+// streams, because the underlying player reference changes on every swap.
 
-class VibeAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
-  final _player = AudioPlayer();
+class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
+  // Physical players — references are stable for the lifetime of the handler.
+  final _playerA = AudioPlayer();
+  final _playerB = AudioPlayer();
 
-  // Single-player volume fade — avoids the seek/buffer gap of a dual-player
-  // crossfade. Fades out over the last few seconds, lets just_audio's native
-  // gapless advance fire, then fades the new track back in.
-  static const _fadeOutSec = 4;   // seconds before end to start fade-out
-  static const _fadeInMs   = 1200; // ms to fade new track in
-  static const _tickMs     = 80;   // volume update interval
+  // Which player is currently primary. Toggled on every crossfade completion.
+  bool _aIsPrimary = true;
+  AudioPlayer get _primary   => _aIsPrimary ? _playerA : _playerB;
+  AudioPlayer get _secondary => _aIsPrimary ? _playerB : _playerA;
 
+  // ── Stable forwarding streams (UI subscribes here) ──────────────────────
+  final _positionCtrl   = StreamController<Duration>.broadcast();
+  final _durationCtrl   = StreamController<Duration?>.broadcast();
+  final _shuffleCtrl    = StreamController<bool>.broadcast();
+  final _loopModeCtrl   = StreamController<LoopMode>.broadcast();
+  final _currentIdxCtrl = StreamController<int?>.broadcast();
+
+  Stream<Duration>  get positionStream           => _positionCtrl.stream;
+  Stream<Duration?> get durationStream           => _durationCtrl.stream;
+  Stream<bool>      get shuffleModeEnabledStream => _shuffleCtrl.stream;
+  Stream<LoopMode>  get loopModeStream           => _loopModeCtrl.stream;
+  Stream<int?>      get currentIndexStream       => _currentIdxCtrl.stream;
+  Duration?         get duration                 => _primary.duration;
+
+  // ── Queue state (Dart-managed) ───────────────────────────────────────────
+  List<MediaItem> _queue    = [];
+  int             _queueIdx = 0;
+  LoopMode        _loopMode = LoopMode.off;
+  bool            _shuffle  = false;
+
+  // ── Playback mode / crossfade config ────────────────────────────────────
+  PlaybackMode _mode         = PlaybackMode.crossfade;
+  int          _crossfadeSec = 6; // configurable, default 6 s
+
+  // Volume tick interval. 50 ms gives ~20 fps — smooth and
+  // not so frequent that it strains lower-end Android devices.
+  static const _tickMs = 50;
+
+  // ── Crossfade runtime state ──────────────────────────────────────────────
   Timer? _fadeTimer;
-  bool   _fadingOut     = false;
-  bool   _loadingTracks = false;
+  bool   _crossfading = false; // true from start of fade until player swap
+  bool   _preloaded   = false; // secondary has a source loaded and buffered
+
+  // ── Listener subscriptions ───────────────────────────────────────────────
+  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<Duration>?    _posSub;
+  StreamSubscription<Duration?>?   _durSub;
+
+  // Suppresses spurious state events during source loads.
+  bool _loading = false;
+
+  // Deduplicates Jellyfin 10-second progress pings.
+  int _lastReportedSec = -1;
 
   VibeAudioHandler() {
-    _init();
+    _wirePrimary();
   }
 
-  Future<void> _init() async {
-    _player.playerStateStream.listen((state) {
-      playbackState.add(playbackState.value.copyWith(
-        controls: [
-          MediaControl.skipToPrevious,
-          state.playing ? MediaControl.pause : MediaControl.play,
-          MediaControl.skipToNext,
-        ],
-        systemActions: const {
-          MediaAction.seek,
-          MediaAction.seekForward,
-          MediaAction.seekBackward,
-        },
-        androidCompactActionIndices: const [0, 1, 2],
-        processingState: switch (state.processingState) {
-          ProcessingState.idle      => AudioProcessingState.idle,
-          ProcessingState.loading   => AudioProcessingState.loading,
-          ProcessingState.buffering => AudioProcessingState.buffering,
-          ProcessingState.ready     => AudioProcessingState.ready,
-          ProcessingState.completed => AudioProcessingState.completed,
-        },
-        playing:          state.playing,
-        updatePosition:   _player.position,
-        bufferedPosition: _player.bufferedPosition,
-        speed:            _player.speed,
-      ));
+  // ── Wire all listeners to the current primary player ─────────────────────
+  // Called once on init and again after every crossfade swap to redirect
+  // event flow to the player that is now primary.
+  void _wirePrimary() {
+    _stateSub?.cancel();
+    _posSub?.cancel();
+    _durSub?.cancel();
 
-      if (state.processingState == ProcessingState.completed) {
-        final idx = _player.currentIndex ?? 0;
-        if (idx >= queue.value.length - 1) {
-          Future.delayed(const Duration(milliseconds: 100), () {
-            mediaItem.add(null);
-            queue.add([]);
-          });
-        }
-      }
+    _stateSub = _primary.playerStateStream.listen(_onPrimaryState);
+
+    // Position stream does two things: forward to _positionCtrl for the UI,
+    // and drive the crossfade trigger and progress-reporting logic.
+    _posSub = _primary.positionStream.listen((pos) {
+      _positionCtrl.add(pos);
+      _onPrimaryPosition(pos);
     });
 
-    _player.currentIndexStream.listen((index) {
-      if (index == null || _loadingTracks) return;
-      final q = queue.value;
+    _durSub = _primary.durationStream.listen(_durationCtrl.add);
+  }
 
-      final prev = mediaItem.value;
-      if (prev != null) {
-        JellyfinApi.reportPlaybackStopped(prev.id, _player.position.inMicroseconds * 10);
-      }
+  // ── Primary player state → audio_service playbackState ───────────────────
+  void _onPrimaryState(PlayerState state) {
+    if (_loading) return;
 
-      if (index < q.length) {
-        mediaItem.add(q[index]);
-        _reportProgressStart(q[index].id);
-      }
+    playbackState.add(playbackState.value.copyWith(
+      controls: [
+        MediaControl.skipToPrevious,
+        state.playing ? MediaControl.pause : MediaControl.play,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: switch (state.processingState) {
+        ProcessingState.idle      => AudioProcessingState.idle,
+        ProcessingState.loading   => AudioProcessingState.loading,
+        ProcessingState.buffering => AudioProcessingState.buffering,
+        ProcessingState.ready     => AudioProcessingState.ready,
+        ProcessingState.completed => AudioProcessingState.completed,
+      },
+      playing:          state.playing,
+      updatePosition:   _primary.position,
+      bufferedPosition: _primary.bufferedPosition,
+      speed:            _primary.speed,
+    ));
 
-      // Track advanced — if we were fading out, cancel and fade the new track in
-      if (_fadingOut) {
-        _fadeTimer?.cancel();
-        _fadingOut = false;
-        _startFadeIn();
-      }
-    });
+    // Natural end of track — only act if NOT mid-crossfade.
+    // During crossfade the primary is faded to 0 and stopped manually; any
+    // completed events it emits before the stop are intentionally ignored.
+    if (state.processingState == ProcessingState.completed && !_crossfading) {
+      _onTrackNaturalEnd();
+    }
+  }
 
-    _player.positionStream.listen((pos) {
-      final item = mediaItem.value;
-      if (item == null) return;
+  // ── Position-driven crossfade trigger ────────────────────────────────────
+  // Runs on every primary position tick (suppressed during crossfade).
+  // Two thresholds:
+  //   (crossfadeSec + 5) s before end  →  preload secondary into buffer
+  //   crossfadeSec before end           →  begin fade
+  void _onPrimaryPosition(Duration pos) {
+    if (_loading || _crossfading) return;
 
-      if (pos.inSeconds > 0 && pos.inSeconds % 10 == 0) {
+    // Jellyfin progress ping every 10 seconds, deduplicated.
+    final item = mediaItem.value;
+    if (item != null) {
+      final sec = pos.inSeconds;
+      if (sec > 0 && sec % 10 == 0 && sec != _lastReportedSec) {
+        _lastReportedSec = sec;
         JellyfinApi.reportPlaybackProgress(item.id, pos.inMicroseconds * 10);
       }
+    }
 
-      // Begin fade-out when within _fadeOutSec of the end
-      if (!_fadingOut) {
-        final dur = _player.duration;
-        if (dur != null && dur.inSeconds > _fadeOutSec * 2) {
-          final remaining = dur - pos;
-          if (remaining.inSeconds <= _fadeOutSec && remaining.inMilliseconds > 200) {
-            _startFadeOut(remaining.inMilliseconds);
-          }
-        }
+    if (_mode != PlaybackMode.crossfade) return;
+
+    final dur = _primary.duration;
+    // Skip crossfade for tracks shorter than 2× the fade window — they would
+    // begin fading almost immediately after starting.
+    if (dur == null || dur.inSeconds < _crossfadeSec * 2) return;
+
+    final nextIdx = _nextIndex;
+    if (nextIdx == null) return; // last track — no crossfade
+
+    final remaining = dur - pos;
+
+    if (!_preloaded && remaining.inSeconds <= (_crossfadeSec + 5)) {
+      _preloadSecondary(nextIdx);
+    }
+
+    if (!_crossfading &&
+        remaining.inSeconds <= _crossfadeSec &&
+        remaining.inMilliseconds > 300) {
+      _beginCrossfade(remaining, nextIdx);
+    }
+  }
+
+  // ── Preload ───────────────────────────────────────────────────────────────
+  // Loads the next track's source into _secondary so it is buffered before
+  // the fade begins. The player stays paused at position 0.
+  Future<void> _preloadSecondary(int nextIdx) async {
+    if (_preloaded) return;
+    _preloaded = true; // set before await to prevent duplicate calls
+    try {
+      final item = _queue[nextIdx];
+      final url  = item.extras?['url'] as String? ?? '';
+      if (url.isEmpty) { _preloaded = false; return; }
+      await _secondary.setAudioSource(
+          AudioSource.uri(Uri.parse(url), tag: item));
+    } catch (_) {
+      _preloaded = false;
+    }
+  }
+
+  // ── Crossfade ─────────────────────────────────────────────────────────────
+  Future<void> _beginCrossfade(Duration remaining, int nextIdx) async {
+    if (_crossfading) return;
+    _crossfading = true; // prevent re-entry from concurrent position ticks
+
+    final nextItem = _queue[nextIdx];
+
+    // Load secondary now if preload didn't complete in time.
+    if (!_preloaded) {
+      final url = nextItem.extras?['url'] as String? ?? '';
+      if (url.isEmpty) { _crossfading = false; return; }
+      try {
+        await _secondary.setAudioSource(
+            AudioSource.uri(Uri.parse(url), tag: nextItem));
+      } catch (_) {
+        _crossfading = false;
+        return;
+      }
+    }
+
+    // Guard: crossfade may have been cancelled while we awaited setAudioSource.
+    if (!_crossfading) return;
+
+    // Secondary plays from position 0 at silence.
+    await _secondary.setVolume(0.0);
+    _secondary.play(); // not awaited — resolves only when the track ends
+
+    // Advance all metadata to the incoming track immediately.
+    // Lock screen, notification, and UI all show the new song as soon as the
+    // crossfade begins — this is the behaviour users expect from premium apps.
+    _reportStopped();
+    _queueIdx        = nextIdx;
+    _lastReportedSec = -1;
+    mediaItem.add(nextItem);
+    _currentIdxCtrl.add(_queueIdx);
+    _reportStarted(nextItem.id);
+    queue.add(List.unmodifiable(_queue));
+
+    // Rewire position/duration forwarding to secondary so the seek bar tracks
+    // the incoming track's progress during the overlap window.
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _posSub = _secondary.positionStream.listen(_positionCtrl.add);
+    _durSub = _secondary.durationStream.listen(_durationCtrl.add);
+
+    final totalMs    = remaining.inMilliseconds.clamp(300, _crossfadeSec * 1000);
+    final totalSteps = (totalMs / _tickMs).round().clamp(1, 9999);
+    int step = 0;
+
+    _fadeTimer?.cancel();
+    _fadeTimer = Timer.periodic(Duration(milliseconds: _tickMs), (timer) {
+      step++;
+      final t = (step / totalSteps).clamp(0.0, 1.0);
+
+      // Equal-power fade curves: cos²(θ) + sin²(θ) = 1.
+      // Constant total loudness across the transition — no perceived dip or bump.
+      final outVol = cos(t * pi / 2).clamp(0.0, 1.0);
+      final inVol  = sin(t * pi / 2).clamp(0.0, 1.0);
+
+      _primary.setVolume(outVol);
+      _secondary.setVolume(inVol);
+
+      if (t >= 1.0) {
+        timer.cancel();
+        _finalizeCrossfade();
       }
     });
   }
 
-  // ── Volume fades ────────────────────────────────────────────────────────────
-
-  void _startFadeOut(int remainingMs) {
-    _fadingOut = true;
-    final clampedMs = remainingMs.clamp(200, _fadeOutSec * 1000);
-    final steps = clampedMs ~/ _tickMs;
-    int step = 0;
+  Future<void> _finalizeCrossfade() async {
     _fadeTimer?.cancel();
-    _fadeTimer = Timer.periodic(
-      Duration(milliseconds: _tickMs),
-      (timer) {
-        step++;
-        final t = (step / steps).clamp(0.0, 1.0);
-        // Cosine easing — sounds more natural than linear
-        final vol = (cos(t * pi / 2)).clamp(0.0, 1.0);
-        _player.setVolume(vol);
-        if (t >= 1.0) timer.cancel();
-      },
-    );
+    _fadeTimer = null;
+
+    // Primary volume is already at 0.0.  Stopping a silent player drains the
+    // audio pipeline into silence — no transient, no click.
+    await _primary.stop();
+    await _primary.setVolume(1.0); // reset for its next role as secondary
+
+    // Swap roles.  The old secondary (which has been playing cleanly for
+    // several seconds) becomes the new primary.
+    _aIsPrimary  = !_aIsPrimary;
+    _crossfading = false;
+    _preloaded   = false;
+
+    // Rewire all listeners to the new primary.
+    _wirePrimary();
   }
 
-  void _startFadeIn() {
-    _player.setVolume(0.0);
-    final steps = _fadeInMs ~/ _tickMs;
-    int step = 0;
+  Future<void> _cancelCrossfade() async {
+    if (!_crossfading && !_preloaded) return;
     _fadeTimer?.cancel();
-    _fadeTimer = Timer.periodic(
-      Duration(milliseconds: _tickMs),
-      (timer) {
-        step++;
-        final t = (step / steps).clamp(0.0, 1.0);
-        final vol = sin(t * pi / 2).clamp(0.0, 1.0);
-        _player.setVolume(vol);
-        if (t >= 1.0) {
-          _player.setVolume(1.0);
-          timer.cancel();
-        }
-      },
-    );
+    _fadeTimer = null;
+    final wasFading = _crossfading;
+    _crossfading    = false;
+    _preloaded      = false;
+    await _secondary.stop();
+    await _secondary.setVolume(1.0);
+    if (wasFading) await _primary.setVolume(1.0);
+    _wirePrimary(); // restore primary forwarding after the cancel
   }
 
-  void _cancelFade() {
-    _fadeTimer?.cancel();
-    _fadeTimer  = null;
-    _fadingOut  = false;
-    _player.setVolume(1.0);
+  // ── Natural track completion (no crossfade) ───────────────────────────────
+  Future<void> _onTrackNaturalEnd() async {
+    final nextIdx = _nextIndex;
+    if (nextIdx == null) {
+      // Queue finished — clear state so mini player disappears.
+      _reportStopped();
+      mediaItem.add(null);
+      queue.add([]);
+      return;
+    }
+    await _hardSkipTo(nextIdx);
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  // ── Hard skip (immediate cut, no fade) ───────────────────────────────────
+  Future<void> _hardSkipTo(int index) async {
+    await _cancelCrossfade();
+    _loading = true;
+
+    _reportStopped();
+    _queueIdx        = index;
+    _lastReportedSec = -1;
+    final item = _queue[index];
+    mediaItem.add(item);
+    _currentIdxCtrl.add(_queueIdx);
+
+    final url = item.extras?['url'] as String? ?? '';
+    try {
+      await _primary.setVolume(1.0);
+      await _primary.setAudioSource(
+          AudioSource.uri(Uri.parse(url), tag: item));
+      _loading = false;
+      _reportStarted(item.id);
+      queue.add(List.unmodifiable(_queue));
+      _primary.play();
+    } catch (_) {
+      _loading = false;
+    }
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────
 
   Future<void> playTracks(List<VibeTrack> tracks, {int startIndex = 0}) async {
-    _cancelFade();
-    final sources      = tracks.map(_toAudioSource).toList();
-    final items        = tracks.map(_toMediaItem).toList();
-    final clampedStart = startIndex.clamp(0, items.length - 1);
-    _loadingTracks = true;
-    await _player.stop();
-    queue.add(items);
-    mediaItem.add(items[clampedStart]);
-    await _player.setAudioSources(sources, initialIndex: clampedStart);
-    // Explicit seek — just_audio_windows doesn't reliably honour initialIndex.
-    if (clampedStart > 0) {
-      await _player.seek(Duration.zero, index: clampedStart);
-    }
-    _loadingTracks = false;
-    _reportProgressStart(items[clampedStart].id);
-    _player.play();
+    await _cancelCrossfade();
+    _loading = true;
+    _reportStopped();
+
+    _queue           = tracks.map(_toMediaItem).toList();
+    _queueIdx        = startIndex.clamp(0, _queue.length - 1);
+    _lastReportedSec = -1;
+
+    final item = _queue[_queueIdx];
+    final url  = item.extras?['url'] as String? ?? '';
+
+    queue.add(List.unmodifiable(_queue));
+    mediaItem.add(item);
+    _currentIdxCtrl.add(_queueIdx);
+
+    await _primary.stop();
+    await _primary.setVolume(1.0);
+    await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
+
+    _loading = false;
+    _reportStarted(item.id);
+    _primary.play();
   }
 
   Future<void> addToQueue(VibeTrack track) async {
-    await _player.addAudioSource(_toAudioSource(track));
-    queue.add([...queue.value, _toMediaItem(track)]);
+    _queue.add(_toMediaItem(track));
+    queue.add(List.unmodifiable(_queue));
   }
 
-  // ── BaseAudioHandler overrides ─────────────────────────────────────────────
+  // Playback mode and crossfade duration are runtime-configurable so a future
+  // settings screen can expose them without touching the engine.
+  void setPlaybackMode(PlaybackMode mode) => _mode = mode;
+  void setCrossfadeDuration(int seconds)  => _crossfadeSec = seconds.clamp(1, 15);
 
-  @override Future<void> play()  => _player.play();
-  @override Future<void> pause() => _player.pause();
-  @override Future<void> stop() async {
-    final item = mediaItem.value;
-    if (item != null) {
-      JellyfinApi.reportPlaybackStopped(item.id, _player.position.inMicroseconds * 10);
-    }
-    return _player.stop();
+  // ── BaseAudioHandler overrides ────────────────────────────────────────────
+
+  @override Future<void> play()  => _primary.play();
+  @override Future<void> pause() => _primary.pause();
+
+  @override
+  Future<void> stop() async {
+    await _cancelCrossfade();
+    _reportStopped();
+    return _primary.stop();
   }
-  @override Future<void> seek(Duration position) => _player.seek(position);
+
+  @override Future<void> seek(Duration position) => _primary.seek(position);
 
   @override
   Future<void> skipToNext() async {
-    _cancelFade();
-    await _player.seekToNext();
-    await _player.play();
+    final next = _nextIndex;
+    if (next == null) return;
+    await _hardSkipTo(next);
   }
 
   @override
   Future<void> skipToPrevious() async {
-    _cancelFade();
-    if (_player.position.inSeconds > 3) {
-      await _player.seek(Duration.zero);
-    } else {
-      await _player.seekToPrevious();
+    if (_primary.position.inSeconds > 3) {
+      await _primary.seek(Duration.zero);
+      return;
     }
-    await _player.play();
+    final prev = _prevIndex;
+    if (prev != null) await _hardSkipTo(prev);
   }
 
   @override
   Future<void> skipToQueueItem(int index) async {
-    _cancelFade();
-    await _player.seek(Duration.zero, index: index);
-    await _player.play();
+    if (index < 0 || index >= _queue.length) return;
+    await _hardSkipTo(index);
   }
 
   @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
-    _player.setLoopMode(switch (repeatMode) {
+    _loopMode = switch (repeatMode) {
       AudioServiceRepeatMode.none => LoopMode.off,
       AudioServiceRepeatMode.one  => LoopMode.one,
       AudioServiceRepeatMode.all  => LoopMode.all,
       _                           => LoopMode.off,
-    });
+    };
+    _loopModeCtrl.add(_loopMode);
+    // LoopMode is managed here in Dart, not by the AudioPlayer, so we do not
+    // call _primary.setLoopMode(). _nextIndex handles all loop logic.
   }
 
   @override
   Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
-    await _player.setShuffleModeEnabled(
-        shuffleMode == AudioServiceShuffleMode.all);
-  }
-
-  // ── Internals ──────────────────────────────────────────────────────────────
-
-  void _reportProgressStart(String itemId) {
-    JellyfinApi.reportPlaybackStart(itemId);
-    final q     = queue.value;
-    final track = q.where((m) => m.id == itemId).firstOrNull;
-    if (track != null) {
-      RecentlyPlayedService.add(VibeTrack(
-        id:         track.id,
-        url:        track.extras?['url']      as String? ?? '',
-        title:      track.title,
-        artist:     track.artist ?? '',
-        album:      track.album  ?? '',
-        albumId:    track.extras?['albumId']  as String?,
-        artistId:   track.extras?['artistId'] as String?,
-        artworkUrl: track.artUri?.toString()  ?? '',
-        colorUrl:   track.extras?['colorUrl'] as String? ?? '',
-        blurHash:   track.extras?['blurHash'] as String?,
-        duration:   track.duration ?? Duration.zero,
-        raw:        {},
-        isAI:       track.extras?['isAI']     as bool? ?? false,
-      ));
+    _shuffle = shuffleMode == AudioServiceShuffleMode.all;
+    if (_shuffle && _queue.isNotEmpty) {
+      // Keep the current track at the front; shuffle everything after it.
+      final current = _queue[_queueIdx];
+      final rest = [..._queue]..removeAt(_queueIdx);
+      rest.shuffle();
+      _queue    = [current, ...rest];
+      _queueIdx = 0;
+      _currentIdxCtrl.add(_queueIdx);
+      queue.add(List.unmodifiable(_queue));
     }
+    _shuffleCtrl.add(_shuffle);
+    playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
   }
 
-  AudioPlayer get player => _player;
+  // ── Queue index helpers ───────────────────────────────────────────────────
+
+  int? get _nextIndex {
+    if (_queue.isEmpty) return null;
+    if (_loopMode == LoopMode.one) return _queueIdx;
+    final next = _queueIdx + 1;
+    if (next >= _queue.length) {
+      return _loopMode == LoopMode.all ? 0 : null;
+    }
+    return next;
+  }
+
+  int? get _prevIndex {
+    if (_queue.isEmpty) return null;
+    final prev = _queueIdx - 1;
+    if (prev < 0) {
+      return _loopMode == LoopMode.all ? _queue.length - 1 : null;
+    }
+    return prev;
+  }
+
+  // ── Jellyfin reporting + recently played ──────────────────────────────────
+
+  void _reportStopped() {
+    final item = mediaItem.value;
+    if (item == null) return;
+    JellyfinApi.reportPlaybackStopped(
+        item.id, _primary.position.inMicroseconds * 10);
+  }
+
+  void _reportStarted(String itemId) {
+    JellyfinApi.reportPlaybackStart(itemId);
+    final idx = _queue.indexWhere((m) => m.id == itemId);
+    if (idx < 0) return;
+    final item = _queue[idx];
+    RecentlyPlayedService.add(VibeTrack(
+      id:         item.id,
+      url:        item.extras?['url']      as String? ?? '',
+      title:      item.title,
+      artist:     item.artist              ?? '',
+      album:      item.album               ?? '',
+      albumId:    item.extras?['albumId']  as String?,
+      artistId:   item.extras?['artistId'] as String?,
+      artworkUrl: item.artUri?.toString()  ?? '',
+      colorUrl:   item.extras?['colorUrl'] as String? ?? '',
+      blurHash:   item.extras?['blurHash'] as String?,
+      duration:   item.duration            ?? Duration.zero,
+      raw:        {},
+      isAI:       item.extras?['isAI']     as bool? ?? false,
+    ));
+  }
 }

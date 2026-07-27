@@ -195,14 +195,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = ref.watch(themeProvider);
+    final theme   = ref.watch(themeProvider);
+    final ambient = ref.watch(ambientThemeProvider);
 
     return Stack(
       children: [
-        // Breathing glow
+        // Breathing glow — uses ambient palette for richer, more saturated atmosphere
         Positioned(
           top: 0, left: 0, right: 0,
-          child: VibeBreathingGlow(color: theme.accent),
+          child: VibeBreathingGlow(
+            color:       ambient.playButtonColor,
+            colorBright: ambient.waveformActive,
+            heightFraction: 0.60,
+          ),
         ),
 
         if (_loading)
@@ -321,10 +326,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         itemCount: _topAlbums.take(10).length,
                         separatorBuilder: (_, _) => const SizedBox(width: 14),
-                        itemBuilder: (_, i) => VibeAlbumCard(
-                          item: _topAlbums[i], theme: theme,
-                          onPress: () => _playAlbum(_topAlbums[i]),
-                        ),
+                        itemBuilder: (_, i) {
+                          final a = _topAlbums[i];
+                          final id     = a['Id']     as String? ?? '';
+                          final name   = a['Name']   as String? ?? '';
+                          final artist = a['AlbumArtist'] as String? ?? '';
+                          final year   = a['ProductionYear'] as int?;
+                          final yParam = year != null ? '&year=$year' : '';
+                          return VibeAlbumCard(
+                            item: a, theme: theme,
+                            onPress: () => context.push(
+                              '/album/$id?name=${Uri.encodeComponent(name)}&artist=${Uri.encodeComponent(artist)}$yParam',
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
