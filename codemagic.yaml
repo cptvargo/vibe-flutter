@@ -1,10 +1,43 @@
+# ViBE — Codemagic CI/CD Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+# ios-testflight  →  TestFlight on every push to main  (Mac M2 runner)
+#
+# ── Environment variable group: vibe-secrets ─────────────────────────────────
+# Codemagic → Teams → Global variables and secrets → vibe-secrets:
+#   VIBE_SERVER_URL        Jellyfin server URL
+#   VIBE_API_KEY           Jellyfin API key
+#   VIBE_USER_ID           Jellyfin user ID
+#   VIBE_LIBRARY_ID        Main library ID
+#   VIBE_AI_LIBRARY_ID     AI library ID
+#   VIBE_COLOR_SERVER      Color server URL
+#   SUPABASE_URL           Supabase project URL
+#   SUPABASE_ANON_KEY      Supabase anon key
+#
+# ── App Store Connect integration ────────────────────────────────────────────
+# Uses the "Codemagic" App Store Connect integration (already configured).
+
 workflows:
+
   ios-testflight:
-    name: iOS TestFlight
-    max_build_duration: 60
+    name: iOS — TestFlight
+    max_build_duration: 90
     instance_type: mac_mini_m2
 
+    triggering:
+      events:
+        - push
+        - workflow_dispatch
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+
+    integrations:
+      app_store_connect: Codemagic
+
     environment:
+      flutter: 3.44.4
+      xcode: latest
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.playvibemusic.vibe
@@ -12,18 +45,6 @@ workflows:
         - vibe-secrets
       vars:
         BUNDLE_ID: com.playvibemusic.vibe
-      flutter: 3.44.4
-      xcode: latest
-
-    integrations:
-      app_store_connect: Codemagic
-
-    triggering:
-      events:
-        - tag
-      tag_patterns:
-        - pattern: 'v*'
-          include: true
 
     scripts:
       - name: Create private config
@@ -31,14 +52,14 @@ workflows:
           python3 - <<'PY'
           import os, pathlib
           pathlib.Path("lib/config").mkdir(parents=True, exist_ok=True)
-          s    = os.environ["VIBE_SERVER_URL"].strip()
-          a    = os.environ["VIBE_API_KEY"].strip()
-          u    = os.environ["VIBE_USER_ID"].strip()
-          lib  = os.environ["VIBE_LIBRARY_ID"].strip()
+          s     = os.environ["VIBE_SERVER_URL"].strip()
+          a     = os.environ["VIBE_API_KEY"].strip()
+          u     = os.environ["VIBE_USER_ID"].strip()
+          lib   = os.environ["VIBE_LIBRARY_ID"].strip()
           ailib = os.environ["VIBE_AI_LIBRARY_ID"].strip()
-          cs   = os.environ["VIBE_COLOR_SERVER"].strip()
-          su   = os.environ["SUPABASE_URL"].strip()
-          sa   = os.environ["SUPABASE_ANON_KEY"].strip()
+          cs    = os.environ["VIBE_COLOR_SERVER"].strip()
+          su    = os.environ["SUPABASE_URL"].strip()
+          sa    = os.environ["SUPABASE_ANON_KEY"].strip()
           content = (
             "class VibeConfig {\n"
             f"  static const String serverUrl    = '{s}';\n"
@@ -58,6 +79,10 @@ workflows:
       - name: Get Flutter packages
         script: flutter pub get
 
+      - name: Flutter analyze
+        script: flutter analyze --no-fatal-infos
+        ignore_failure: true
+
       - name: Set up code signing
         script: xcode-project use-profiles
 
@@ -72,6 +97,12 @@ workflows:
       - /tmp/xcodebuild_logs/*.log
 
     publishing:
+      email:
+        recipients:
+          - jvargas22@duck.com
+        notify:
+          success: true
+          failure: true
       app_store_connect:
         auth: integration
         submit_to_testflight: true
