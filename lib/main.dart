@@ -9,6 +9,7 @@ import 'config/vibe_config.dart';
 import 'navigation/router.dart';
 import 'theme/palette_service.dart';
 import 'services/recently_played_service.dart';
+import 'services/last_played_service.dart';
 import 'providers.dart';
 
 Future<void> main() async {
@@ -52,6 +53,35 @@ Future<void> main() async {
   // pauses correctly on calls/Siri). On Android it requests audio focus.
   final session = await AudioSession.instance;
   await session.configure(const AudioSessionConfiguration.music());
+
+  // Restore the last played track so the mini player shows on cold start.
+  // The audio source is NOT loaded here — it loads on the first play tap
+  // to avoid unnecessary network use at startup.
+  final lastPlayed = await LastPlayedService.load();
+  if (lastPlayed != null) handler.mediaItem.add(lastPlayed);
+
+  // Auto-play when a Bluetooth output device connects (iOS/Android only).
+  // Covers car audio (A2DP), phone calls audio (HFP), and Bluetooth LE audio.
+  session.devicesChangedEventStream.listen((event) {
+    // ignore: experimental_member_use
+    final btAdded = event.devicesAdded.any((d) =>
+      // ignore: experimental_member_use
+      d.type == AudioDeviceType.bluetoothA2dp ||
+      // ignore: experimental_member_use
+      d.type == AudioDeviceType.bluetoothSco  ||
+      // ignore: experimental_member_use
+      d.type == AudioDeviceType.bluetoothLe);
+    if (btAdded &&
+        !handler.playbackState.value.playing &&
+        handler.mediaItem.value != null) {
+      handler.play();
+    }
+  });
+
+  // Pause when the audio output becomes noisy (headphone unplug, BT disconnect).
+  session.becomingNoisyEventStream.listen((_) {
+    if (handler.playbackState.value.playing) handler.pause();
+  });
 
   runApp(
     ProviderScope(

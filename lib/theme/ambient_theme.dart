@@ -27,6 +27,35 @@ class AmbientTheme {
   });
 
   factory AmbientTheme.from(VibePalette p) {
+    // Detect achromatic albums (black, grey, white). When a swatch has zero
+    // saturation its HSL hue is 0 (red), so clamping minS would produce a
+    // vivid red glow on a completely grey album — prevent that here.
+    final maxSat = [p.vibrant, p.darkVibrant, p.muted]
+        .map((c) => HSLColor.fromColor(c).saturation)
+        .reduce((a, b) => a > b ? a : b);
+
+    if (maxSat < 0.12) {
+      // Honour the neutral palette — no saturation forcing, just lightness shaping.
+      final light  = _clampHSL(p.lightVibrant, minL: 0.55, maxL: 0.85);
+      final anchor = _clampHSL(p.darkVibrant,  minL: 0.18, maxL: 0.40);
+      final tail   = _clampHSL(p.muted,        minL: 0.35, maxL: 0.55);
+      final bgDark = Color.lerp(p.darkVibrant, Colors.black, 0.85) ?? Colors.black;
+
+      return AmbientTheme(
+        glowColor:        light,
+        artworkGlow:      light,
+        backgroundDark:   bgDark,
+        playButtonColor:  anchor,
+        playButtonGlow:   light.withAlpha(0xCC),
+        rimColor:         light.withAlpha(0x77),
+        waveformActive:   light,
+        waveformInactive: Colors.white.withAlpha(0x28),
+        waveformAnchor:   anchor,
+        waveformTail:     tail,
+      );
+    }
+
+    // Colored albums: pick most saturated base, clamp into vivid range.
     // White-background albums: palette_generator may extract near-achromatic swatches.
     // Pick the most saturated candidate so a white album with a colored logo still
     // produces a meaningful glow rather than an arbitrary forced hue.

@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import '../api/jellyfin_models.dart';
 import '../api/jellyfin_api.dart';
 import '../services/recently_played_service.dart';
+import '../services/last_played_service.dart';
 
 // ─── Playback mode ─────────────────────────────────────────────────────────────
 // Only crossfade is implemented now. The enum exists so Smart/Gapless modes
@@ -265,6 +266,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _lastReportedSec = -1;
     mediaItem.add(nextItem);
     _currentIdxCtrl.add(_queueIdx);
+    _saveCurrentItem(nextItem);
     _reportStarted(nextItem.id);
     queue.add(List.unmodifiable(_queue));
 
@@ -355,6 +357,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     final item = _queue[index];
     mediaItem.add(item);
     _currentIdxCtrl.add(_queueIdx);
+    _saveCurrentItem(item);
 
     final url = item.extras?['url'] as String? ?? '';
     try {
@@ -369,6 +372,9 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _loading = false;
     }
   }
+
+  // ── Persist current track for cold-start restore ──────────────────────────
+  void _saveCurrentItem(MediaItem item) => LastPlayedService.save(item);
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -387,6 +393,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     queue.add(List.unmodifiable(_queue));
     mediaItem.add(item);
     _currentIdxCtrl.add(_queueIdx);
+    _saveCurrentItem(item);
 
     await _primary.stop();
     await _primary.setVolume(1.0);
@@ -409,7 +416,32 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ── BaseAudioHandler overrides ────────────────────────────────────────────
 
-  @override Future<void> play()  => _primary.play();
+  @override
+  Future<void> play() async {
+    // If the queue is empty but a track was restored from cold-start, load it
+    // on first play tap rather than at startup (avoids unnecessary network use).
+    if (_queue.isEmpty) {
+      final item = mediaItem.value;
+      if (item == null) return;
+      final url = item.extras?['url'] as String? ?? '';
+      if (url.isEmpty) return;
+      _queue    = [item];
+      _queueIdx = 0;
+      _loading  = true;
+      queue.add(List.unmodifiable(_queue));
+      try {
+        await _primary.setVolume(1.0);
+        await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
+        _loading = false;
+        _reportStarted(item.id);
+      } catch (_) {
+        _loading = false;
+        return;
+      }
+    }
+    return _primary.play();
+  }
+
   @override Future<void> pause() => _primary.pause();
 
   @override
