@@ -214,7 +214,8 @@ class _ArtistRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: Row(
           children: [
-            ArtistAvatar(id: id, name: name, size: 48, theme: theme),
+            ArtistAvatar(id: id, name: name, size: 48, theme: theme,
+                imageTag: (item['ImageTags'] as Map?)?['Primary'] as String?),
             const SizedBox(width: 14),
             Expanded(
               child: Text(name,

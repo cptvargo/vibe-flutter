@@ -71,6 +71,7 @@ class VibeTrack {
     final artistItems = (j['ArtistItems'] as List?)?.cast<Map<String, dynamic>>();
     final artistId  = artistItems?.firstOrNull?['Id'] as String?
                       ?? (j['AlbumArtistIds'] as List?)?.firstOrNull as String?;
+    final imageTag  = (j['ImageTags'] as Map?)?['Primary'] as String?;
 
     return VibeTrack(
       id:          j['Id'] as String,
@@ -82,7 +83,7 @@ class VibeTrack {
       album:       j['Album'] as String? ?? '',
       albumId:     albumId,
       artistId:    artistId,
-      artworkUrl:  JellyfinApi.imageUrl(albumId, size: 600),
+      artworkUrl:  JellyfinApi.imageUrl(albumId, size: 600, tag: imageTag),
       colorUrl:    JellyfinApi.colorExtractionUrl(albumId),
       blurHash:    blurHash,
       duration:    Duration(microseconds: (ticks / 10).round()),

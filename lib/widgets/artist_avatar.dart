@@ -18,6 +18,7 @@ class ArtistAvatar extends StatelessWidget {
   final double size;
   final VibeTheme theme;
   final bool circle;
+  final String? imageTag;
 
   const ArtistAvatar({
     super.key,
@@ -26,6 +27,7 @@ class ArtistAvatar extends StatelessWidget {
     required this.size,
     required this.theme,
     this.circle = true,
+    this.imageTag,
   });
 
   static String _initials(String name) {
@@ -79,7 +81,7 @@ class ArtistAvatar extends StatelessWidget {
     return ClipRRect(
       borderRadius: clip,
       child: CachedNetworkImage(
-        imageUrl: JellyfinApi.imageUrl(id, size: size.toInt()),
+        imageUrl: JellyfinApi.imageUrl(id, size: size.toInt(), tag: imageTag),
         width: size, height: size,
         fit: BoxFit.cover,
         placeholder: (_, _) =>

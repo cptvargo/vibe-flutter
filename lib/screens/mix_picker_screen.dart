@@ -215,7 +215,8 @@ class _MixPickerScreenState extends ConsumerState<MixPickerScreen> {
                             onTap: () => _toggle(item),
                             leading: widget.isArtist
                                 ? ArtistAvatar(id: id, name: name,
-                                    size: 44, theme: theme)
+                                    size: 44, theme: theme,
+                                    imageTag: (item['ImageTags'] as Map?)?['Primary'] as String?)
                                 : _Square(url: artUrl, size: 44, theme: theme),
                             title: Text(
                               name,
@@ -295,7 +296,8 @@ class _SelectedPreview extends StatelessWidget {
                   children: [
                     isArtist
                         ? ArtistAvatar(id: id, name: name,
-                            size: 36, theme: theme)
+                            size: 36, theme: theme,
+                            imageTag: (item['ImageTags'] as Map?)?['Primary'] as String?)
                         : _Square(url: url, size: 36, theme: theme),
                     // Small × badge
                     Positioned(

@@ -228,7 +228,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 if (_artists.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   VibeFadeSlide(animation: _sec(0),
-                    child: VibeSectionHeader(title: 'Artist Corner', theme: theme)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Artist Corner',
+                            style: TextStyle(
+                              color: theme.textColor, fontSize: 18,
+                              fontWeight: FontWeight.w700, letterSpacing: 0.4,
+                              shadows: [
+                                Shadow(color: theme.accent.withAlpha(0xCC), blurRadius: 10),
+                                Shadow(color: theme.accentBright.withAlpha(0x66), blurRadius: 24),
+                              ],
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => context.push('/all-artists'),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('See All',
+                                  style: TextStyle(
+                                    color: theme.accentBright, fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                Icon(Icons.chevron_right_rounded,
+                                    color: theme.accentBright, size: 18),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   VibeFadeSlide(animation: _sec(0),
                     child: SizedBox(
@@ -236,7 +271,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: _artists.length,
+                        itemCount: _artists.take(5).length,
                         separatorBuilder: (_, _) => const SizedBox(width: 14),
                         itemBuilder: (_, i) {
                           final a = _artists[i];

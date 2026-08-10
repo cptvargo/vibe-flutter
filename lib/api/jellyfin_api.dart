@@ -32,8 +32,10 @@ class JellyfinApi {
 
   // ── Image URLs ─────────────────────────────────────────────────────────────
 
-  static String imageUrl(String itemId, {String type = 'Primary', int size = 400}) =>
-      '$_base/Items/$itemId/Images/$type?fillHeight=$size&fillWidth=$size&quality=90&api_key=$_key';
+  static String imageUrl(String itemId, {String type = 'Primary', int size = 400, String? tag}) {
+    final base = '$_base/Items/$itemId/Images/$type?fillHeight=$size&fillWidth=$size&quality=90&api_key=$_key';
+    return tag != null ? '$base&tag=$tag' : base;
+  }
 
   // 32px thumbnail used only for color extraction — ~2KB download
   static String colorExtractionUrl(String itemId) =>
@@ -62,7 +64,7 @@ class JellyfinApi {
           '&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=SortName');
 
   static const _trackFields =
-      'PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds';
+      'PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds,ImageTags';
 
   static Future<Map<String, dynamic>> getAlbumTracks(String albumId) =>
       _get('/Users/$_user/Items?ParentId=$albumId&IncludeItemTypes=Audio'
@@ -135,6 +137,46 @@ class JellyfinApi {
       _get('/Users/$_user/Items?ParentId=$_aiLib&IncludeItemTypes=Audio'
           '&Limit=$limit&Recursive=true&Fields=$_trackFields'
           '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed');
+
+  static Future<List<Map<String, dynamic>>> getSimilarArtistsByGenre(
+      String artistId, {int limit = 8}) async {
+    try {
+      // 1. Grab genres from this artist's tracks
+      final trackRes = await _get(
+          '/Users/$_user/Items?ArtistIds=$artistId&IncludeItemTypes=Audio'
+          '&Recursive=true&Fields=Genres&Limit=5&ParentId=$_lib');
+      final genres = <String>{};
+      for (final t in ((trackRes['Items'] as List?) ?? []).cast<Map<String, dynamic>>()) {
+        genres.addAll((t['Genres'] as List? ?? []).cast<String>());
+      }
+      if (genres.isEmpty) return [];
+
+      // 2. Find tracks in the same genre(s), collect unique artists
+      final seen   = <String>{artistId};
+      final result = <Map<String, dynamic>>[];
+
+      for (final genre in genres.take(2)) {
+        if (result.length >= limit) break;
+        final q   = Uri.encodeComponent(genre);
+        final res = await _get(
+            '/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=Audio'
+            '&Recursive=true&Genres=$q&Fields=ArtistItems&Limit=100&SortBy=Random');
+        for (final track in ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>()) {
+          if (result.length >= limit) break;
+          for (final a in ((track['ArtistItems'] as List?) ?? []).cast<Map<String, dynamic>>()) {
+            final id = a['Id'] as String? ?? '';
+            if (id.isNotEmpty && seen.add(id)) {
+              result.add(a); // {Id, Name}
+            }
+          }
+        }
+      }
+
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
 
   static Future<String?> getAIArtistIdByName(String name) async {
     try {

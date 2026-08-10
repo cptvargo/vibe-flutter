@@ -584,6 +584,9 @@ class _Content extends ConsumerWidget {
           ),
         ),
 
+        // Similar Artists row — shown below the artwork, above controls
+        _SimilarArtistsRow(artistId: item.extras?['artistId'] as String?),
+
         // Controls panel — subtly elevated surface in the dark zone below the art.
         // The rounded top + dark fill creates a physical separation from the glow.
         Container(
@@ -1372,4 +1375,114 @@ class _WaveformPainter extends CustomPainter {
       colorMid     != old.colorMid     ||
       colorEnd     != old.colorEnd     ||
       colorTail    != old.colorTail;
+}
+
+// ── Similar Artists row ─────────────────────────────────────────────────────
+class _SimilarArtistsRow extends ConsumerWidget {
+  final String? artistId;
+  const _SimilarArtistsRow({required this.artistId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (artistId == null || artistId!.isEmpty) return const SizedBox.shrink();
+    final theme = ref.watch(playerThemeProvider);
+
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: JellyfinApi.getSimilarArtistsByGenre(artistId!),
+      builder: (context, snap) {
+        final artists = snap.data ?? [];
+        if (artists.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(28, 16, 28, 10),
+              child: Text(
+                'SIMILAR ARTISTS',
+                style: TextStyle(
+                  color: Colors.white.withAlpha(0x55),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                itemCount: artists.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 20),
+                itemBuilder: (context, i) {
+                  final a    = artists[i];
+                  final id   = a['Id']   as String? ?? '';
+                  final name = a['Name'] as String? ?? '';
+                  return GestureDetector(
+                    onTap: () {
+                      ref.read(playerOpenProvider.notifier).state = false;
+                      GoRouter.of(context).go(
+                        '/artist/$id?name=${Uri.encodeComponent(name)}',
+                      );
+                    },
+                    child: SizedBox(
+                      width: 72,
+                      child: Column(
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: theme.accentBright.withAlpha(0x44),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            child: CircleAvatar(
+                              radius: 34,
+                              backgroundColor: theme.accent.withAlpha(0x44),
+                              child: ClipOval(
+                                child: Image.network(
+                                  JellyfinApi.imageUrl(id, size: 100),
+                                  width: 68, height: 68,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Text(
+                                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                    style: TextStyle(
+                                      color: theme.accentBright,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withAlpha(0xAA),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
+        );
+      },
+    );
+  }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../screens/album_screen.dart';
+import '../screens/all_artists_screen.dart';
 import '../screens/artist_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/mix_picker_screen.dart';
@@ -52,6 +53,10 @@ final GoRouter router = GoRouter(
           builder: (context, state) => MixPickerScreen(
             type: state.pathParameters['type']!,
           ),
+        ),
+        GoRoute(
+          path: 'all-artists',
+          builder: (context, state) => const AllArtistsScreen(),
         ),
       ],
     ),
