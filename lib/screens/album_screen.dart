@@ -1,3 +1,5 @@
+import 'dart:math';
+import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +77,12 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   Future<void> _loadSimilarArtists() async {
     final id = _artistId;
     if (id == null || id.isEmpty) return;
-    final results = await JellyfinApi.getSimilarArtistsByGenre(id, limit: 8);
+    final results = await JellyfinApi.getSimilarArtistsByGenre(
+      id,
+      albumId:    widget.albumId,
+      artistName: widget.artistName,
+      limit: 8,
+    );
     if (mounted && results.isNotEmpty) {
       setState(() => _similarArtists = results);
     }
@@ -258,75 +265,92 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                     child: Center(child: CircularProgressIndicator()),
                   )
                 else ...[
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, i) {
-                        final track = _tracks[i];
-                        return GestureDetector(
-                          onTap: () => _play(i),
-                          behavior: HitTestBehavior.opaque,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                                hPad, 0, hPad, 0),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 11),
-                              child: Row(
-                                children: [
-                                  // Track number
-                                  SizedBox(
-                                    width: 24,
-                                    child: Text(
-                                      '${i + 1}',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                          color: theme.textFaint,
-                                          fontSize: 13),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  // Title + featured artist
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          track.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: theme.textColor,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                  StreamBuilder<MediaItem?>(
+                    stream: ref.read(audioHandlerProvider).mediaItem,
+                    builder: (context, snap) {
+                      final currentId = snap.data?.id;
+                      return SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) {
+                            final track     = _tracks[i];
+                            final isCurrent = track.id == currentId;
+                            return GestureDetector(
+                              onTap: () => _play(i),
+                              behavior: HitTestBehavior.opaque,
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                    hPad, 0, hPad, 0),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 11),
+                                  child: Row(
+                                    children: [
+                                      // Track number or now-playing equalizer
+                                      SizedBox(
+                                        width: 24,
+                                        child: isCurrent
+                                            ? Center(
+                                                child: _NowPlayingBars(
+                                                  color: theme.accent,
+                                                ),
+                                              )
+                                            : Text(
+                                                '${i + 1}',
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                    color: theme.textFaint,
+                                                    fontSize: 13),
+                                              ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      // Title + featured artist
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              track.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: isCurrent
+                                                    ? theme.accentBright
+                                                    : theme.textColor,
+                                                fontSize: 14,
+                                                fontWeight: isCurrent
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w600,
+                                              ),
+                                            ),
+                                            if (track.artist.isNotEmpty &&
+                                                track.artist != widget.artistName)
+                                              Text(
+                                                track.artist,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                    color: theme.textDim,
+                                                    fontSize: 12),
+                                              ),
+                                          ],
                                         ),
-                                        if (track.artist.isNotEmpty &&
-                                            track.artist != widget.artistName)
-                                          Text(
-                                            track.artist,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                                color: theme.textDim,
-                                                fontSize: 12),
-                                          ),
-                                      ],
-                                    ),
+                                      ),
+                                      // Duration
+                                      Text(
+                                        _fmt(track.duration),
+                                        style: TextStyle(
+                                            color: theme.textFaint, fontSize: 12),
+                                      ),
+                                    ],
                                   ),
-                                  // Duration
-                                  Text(
-                                    _fmt(track.duration),
-                                    style: TextStyle(
-                                        color: theme.textFaint, fontSize: 12),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      },
-                      childCount: _tracks.length,
-                    ),
+                            );
+                          },
+                          childCount: _tracks.length,
+                        ),
+                      );
+                    },
                   ),
                   // ── You might also like ──────────────────────────────────
                   if (_similarArtists.isNotEmpty)
@@ -468,6 +492,63 @@ class _YouMightAlsoLike extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// Three animated bars — now-playing indicator in the track list
+class _NowPlayingBars extends StatefulWidget {
+  final Color color;
+  const _NowPlayingBars({required this.color});
+  @override
+  State<_NowPlayingBars> createState() => _NowPlayingBarsState();
+}
+
+class _NowPlayingBarsState extends State<_NowPlayingBars>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Widget _bar(double h) => Container(
+    width: 3, height: h,
+    decoration: BoxDecoration(
+      color: widget.color,
+      borderRadius: BorderRadius.circular(1.5),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, _) {
+        final t  = _ctrl.value * 2 * pi;
+        final h1 = 3 + 11 * ((sin(t * 1.10)       + 1) / 2);
+        final h2 = 3 + 11 * ((sin(t * 0.85 + 1.0) + 1) / 2);
+        final h3 = 3 + 11 * ((sin(t * 1.30 + 2.1) + 1) / 2);
+        return SizedBox(
+          width: 16, height: 14,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [_bar(h1), _bar(h2), _bar(h3)],
+          ),
+        );
+      },
     );
   }
 }

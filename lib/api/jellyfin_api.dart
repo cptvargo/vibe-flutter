@@ -138,41 +138,108 @@ class JellyfinApi {
           '&Limit=$limit&Recursive=true&Fields=$_trackFields'
           '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed');
 
+  // Genre buckets — Jellyfin's Genres filter does substring matching, so
+  // "Contemporary Christian" also returns "Christian Hip-Hop" albums.
+  // We fetch all albums once and do exact bucket matching client-side.
+  static const _hipHopGenres = {
+    'christian hip-hop', 'hip-hop', 'rap', 'christian rap',
+    'hip-hop/rap', 'christian/rap', 'trap',
+  };
+  static const _worshipGenres = {
+    'contemporary christian', 'praise & worship', 'worship',
+    'gospel', 'ccm', 'christian pop',
+  };
+  static const _genericGenres = {'music', 'christian', ''};
+
   static Future<List<Map<String, dynamic>>> getSimilarArtistsByGenre(
-      String artistId, {int limit = 8}) async {
+      String artistId, {String? albumId, String? artistName, int limit = 8}) async {
     try {
-      // 1. Grab genres from this artist's tracks
-      final trackRes = await _get(
-          '/Users/$_user/Items?ArtistIds=$artistId&IncludeItemTypes=Audio'
-          '&Recursive=true&Fields=Genres&Limit=5&ParentId=$_lib');
-      final genres = <String>{};
-      for (final t in ((trackRes['Items'] as List?) ?? []).cast<Map<String, dynamic>>()) {
-        genres.addAll((t['Genres'] as List? ?? []).cast<String>());
+      final excludeName = (artistName ?? '').toLowerCase().trim();
+
+      // One call — fetch all albums with genres + album artist info.
+      // Note: Jellyfin returns AlbumArtists [{Name,Id}] not AlbumArtistIds.
+      final res = await _get(
+          '/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=MusicAlbum'
+          '&Recursive=true&Fields=Genres,AlbumArtist,AlbumArtists&Limit=500');
+      final albums = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
+
+      // Build albumArtistId → {specific genres} map (skip generic catch-alls).
+      // Also build a reverse map: albumId → albumArtistId so we can resolve the
+      // correct artist ID even when the track's ArtistItems ID differs from the
+      // album's AlbumArtistIds (a common Jellyfin inconsistency).
+      final artistGenres  = <String, Set<String>>{};
+      final artistNames   = <String, String>{};
+      final albumToArtist = <String, String>{}; // albumId → albumArtistId
+      for (final album in albums) {
+        final artists = (album['AlbumArtists'] as List?)?.cast<Map<String, dynamic>>();
+        final aId    = artists?.firstOrNull?['Id'] as String? ?? '';
+        final aName  = (album['AlbumArtist'] as String? ?? '').trim();
+        final albId  = album['Id'] as String? ?? '';
+        if (aId.isEmpty) continue;
+        final gs = (album['Genres'] as List? ?? [])
+            .cast<String>()
+            .map((g) => g.toLowerCase().trim())
+            .where((g) => !_genericGenres.contains(g))
+            .toSet();
+        artistGenres.putIfAbsent(aId, () => {}).addAll(gs);
+        artistNames[aId] = aName;
+        if (albId.isNotEmpty) albumToArtist[albId] = aId;
       }
-      if (genres.isEmpty) return [];
 
-      // 2. Find tracks in the same genre(s), collect unique artists
-      final seen   = <String>{artistId};
-      final result = <Map<String, dynamic>>[];
+      // Resolve the current artist: prefer albumId lookup (more reliable),
+      // fall back to the track-supplied artistId.
+      final resolvedId    = (albumId != null ? albumToArtist[albumId] : null) ?? artistId;
+      final currentGenres = artistGenres[resolvedId] ?? {};
+      Set<String> bucket;
+      if (currentGenres.any(_hipHopGenres.contains)) {
+        bucket = _hipHopGenres;
+      } else if (currentGenres.any(_worshipGenres.contains)) {
+        bucket = _worshipGenres;
+      } else {
+        // Unknown or no specific genre — fall back to random.
+        return _randomOtherArtists(artistId, excludeName: excludeName, limit: limit);
+      }
 
-      for (final genre in genres.take(2)) {
+      // Collect artists in the same bucket, shuffled, excluding self.
+      final candidates = artistGenres.entries.toList()..shuffle();
+      final result     = <Map<String, dynamic>>[];
+      final seenIds    = <String>{resolvedId, artistId}; // exclude both IDs for same artist
+      final seenNames  = <String>{};
+
+      for (final entry in candidates) {
         if (result.length >= limit) break;
-        final q   = Uri.encodeComponent(genre);
-        final res = await _get(
-            '/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=Audio'
-            '&Recursive=true&Genres=$q&Fields=ArtistItems&Limit=100&SortBy=Random');
-        for (final track in ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>()) {
-          if (result.length >= limit) break;
-          for (final a in ((track['ArtistItems'] as List?) ?? []).cast<Map<String, dynamic>>()) {
-            final id = a['Id'] as String? ?? '';
-            if (id.isNotEmpty && seen.add(id)) {
-              result.add(a); // {Id, Name}
-            }
-          }
+        final aId   = entry.key;
+        final aName = (artistNames[aId] ?? '').trim();
+        final aLow  = aName.toLowerCase();
+        if (!seenIds.add(aId)) continue;
+        if (!seenNames.add(aLow)) continue;
+        if (excludeName.isNotEmpty && aLow.contains(excludeName)) continue;
+        if (entry.value.any(bucket.contains)) {
+          result.add({'Id': aId, 'Name': aName});
         }
       }
 
-      return result;
+      if (result.isNotEmpty) return result;
+      return _randomOtherArtists(resolvedId, excludeName: excludeName, limit: limit);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> _randomOtherArtists(
+      String excludeId, {String excludeName = '', int limit = 8}) async {
+    try {
+      final res = await _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib'
+          '&Limit=200&Fields=ImageTags&SortBy=SortName');
+      final all = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
+      final filtered = all.where((a) {
+        final id  = a['Id']   as String? ?? '';
+        final low = (a['Name'] as String? ?? '').toLowerCase();
+        if (id == excludeId) return false;
+        if (excludeName.isNotEmpty && low.contains(excludeName)) return false;
+        return true;
+      }).toList()..shuffle();
+      return filtered.take(limit).toList();
     } catch (_) {
       return [];
     }

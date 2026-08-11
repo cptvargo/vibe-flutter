@@ -1,6 +1,8 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
@@ -91,8 +93,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             if (name.isEmpty || name.contains(','))         return false;
             return seen.add(name.toLowerCase());
           })
-          .toList()
-          ..shuffle();
+          .toList();
+
+      // Artist Corner rotates once per day — same order all day, different tomorrow.
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+      final prefs = await Hive.openBox<dynamic>('vibe_prefs');
+      int seed;
+      if (prefs.get('artist_corner_date') == today) {
+        seed = (prefs.get('artist_corner_seed') as int?) ?? DateTime.now().millisecondsSinceEpoch;
+      } else {
+        seed = DateTime.now().millisecondsSinceEpoch;
+        await prefs.put('artist_corner_date', today);
+        await prefs.put('artist_corner_seed', seed);
+      }
+      artists.shuffle(Random(seed));
 
       setState(() {
         _recentTracks = RecentlyPlayedService.tracks;
