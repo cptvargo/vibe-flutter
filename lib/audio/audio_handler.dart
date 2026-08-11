@@ -18,7 +18,7 @@ enum PlaybackMode {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-MediaItem _toMediaItem(VibeTrack t) => MediaItem(
+MediaItem _toMediaItem(VibeTrack t, {String playbackContext = 'album'}) => MediaItem(
   id:       t.id,
   title:    t.title,
   artist:   t.artist,
@@ -26,13 +26,14 @@ MediaItem _toMediaItem(VibeTrack t) => MediaItem(
   duration: t.duration,
   artUri:   Uri.parse(t.artworkUrl),
   extras: {
-    'url':            t.url,
-    'albumId':        t.albumId,
-    'artistId':       t.artistId,
-    'colorUrl':       t.colorUrl,
-    'blurHash':       t.blurHash,
-    'durationMicros': t.duration.inMicroseconds,
-    'isAI':           t.isAI,
+    'url':             t.url,
+    'albumId':         t.albumId,
+    'artistId':        t.artistId,
+    'colorUrl':        t.colorUrl,
+    'blurHash':        t.blurHash,
+    'durationMicros':  t.duration.inMicroseconds,
+    'isAI':            t.isAI,
+    'playbackContext': playbackContext,
   },
 );
 
@@ -378,12 +379,16 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  Future<void> playTracks(List<VibeTrack> tracks, {int startIndex = 0}) async {
+  Future<void> playTracks(
+    List<VibeTrack> tracks, {
+    int startIndex = 0,
+    String playbackContext = 'album',
+  }) async {
     await _cancelCrossfade();
     _loading = true;
     _reportStopped();
 
-    _queue           = tracks.map(_toMediaItem).toList();
+    _queue           = tracks.map((t) => _toMediaItem(t, playbackContext: playbackContext)).toList();
     _queueIdx        = startIndex.clamp(0, _queue.length - 1);
     _lastReportedSec = -1;
 

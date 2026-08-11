@@ -40,12 +40,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   double _dragOffset = 0;
   late final AnimationController _snapCtrl;
   Animation<double>? _snapAnim;
-  StreamSubscription<PlaybackState>? _completionSub;
-  StreamSubscription<MediaItem?>? _itemSub;
+  StreamSubscription<MediaItem?>? _mediaItemSub;
   MediaItem? _lastItem;
-  bool _queueLoaded = false;
+  bool _queueLoaded           = false;
+  bool _nearingEnd            = false;
+  bool _crossedEarlyThreshold = false;
+  String? _nearingEndTrackId;
   Timer? _queueEndTimer;
-  // Store notifier ref so we can safely use it in dispose()
   StateController<bool>? _playerOpenCtrl;
 
   @override
@@ -55,42 +56,48 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
-    // Store notifier reference for use in dispose() — don't set state here
     _playerOpenCtrl = ref.read(playerOpenProvider.notifier);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final handler = ref.read(audioHandlerProvider);
 
-      // Track the current item so post-playback screen knows what was playing.
-      _itemSub = handler.mediaItem.listen((item) {
-        if (item != null) _lastItem = item;
-      });
-
-      // AudioProcessingState.completed fires only when actual playback ends —
-      // not during queue setup or track swaps — so this is the right signal.
-      _completionSub = handler.playbackState.listen((state) {
-        if (!mounted) return;
-        // Once we see the player actually playing, the queue is loaded.
-        if (state.playing) _queueLoaded = true;
-
-        if (state.processingState == AudioProcessingState.completed && _queueLoaded) {
-          // Short debounce in case the handler auto-advances to a next track.
+      _mediaItemSub = handler.mediaItem.listen((item) {
+        if (item != null) {
+          _lastItem              = item;
+          _queueLoaded           = true;
+          _nearingEnd            = false;
+          _nearingEndTrackId     = null;
+          _crossedEarlyThreshold = false;
+          _queueEndTimer?.cancel();
+        } else if (_queueLoaded && _nearingEnd && _nearingEndTrackId == _lastItem?.id) {
+          // Queue ended naturally: position was genuinely past 90% of this
+          // specific track, not a stale value from a previous session.
           _queueEndTimer?.cancel();
           _queueEndTimer = Timer(const Duration(milliseconds: 400), () {
             if (!mounted) return;
-            // Still completed after 400 ms → genuinely nothing left to play.
-            if (handler.playbackState.value.processingState !=
-                AudioProcessingState.completed) return;
-            final isRadio = _lastItem?.extras?['isRadio'] as bool? ?? false;
-            if (!isRadio) {
-              _navigateToPostPlayback();
-            } else {
-              _animateDismiss();
-            }
+            if (handler.mediaItem.value != null) return;
+            _animateDismiss();
           });
-        } else if (state.processingState != AudioProcessingState.completed) {
-          _queueEndTimer?.cancel();
+        }
+      });
+
+      // Only set _nearingEnd once position has been seen below 80% for the
+      // current track — prevents stale end-of-track position from a prior
+      // play session from triggering dismiss on a freshly loaded track.
+      handler.positionStream.listen((pos) {
+        final dur = handler.duration;
+        if (dur == null || dur.inMilliseconds == 0) return;
+        final pct = pos.inMilliseconds / dur.inMilliseconds;
+        if (pct < 0.80) {
+          _crossedEarlyThreshold = true;
+          if (_nearingEnd) {
+            _nearingEnd        = false;
+            _nearingEndTrackId = null;
+          }
+        } else if (pct > 0.90 && _crossedEarlyThreshold && !_nearingEnd) {
+          _nearingEnd        = true;
+          _nearingEndTrackId = _lastItem?.id;
         }
       });
     });
@@ -98,11 +105,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
-    _completionSub?.cancel();
-    _itemSub?.cancel();
+    _mediaItemSub?.cancel();
     _queueEndTimer?.cancel();
     _snapCtrl.dispose();
-    _playerOpenCtrl?.state = false; // safe — stored reference, not ref.read()
+    _playerOpenCtrl?.state = false;
     super.dispose();
   }
 
@@ -118,27 +124,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _snapCtrl.forward(from: 0).then((_) {
       if (mounted) Navigator.pop(context);
     });
-  }
-
-  void _navigateToPostPlayback() {
-    if (!mounted) return;
-    _playerOpenCtrl?.state = false;
-    final item       = _lastItem!;
-    final artistId   = item.extras?['artistId'] as String? ?? '';
-    final artistName = item.artist ?? '';
-    final title      = item.album?.isNotEmpty == true ? item.album! : item.title;
-    final artUrl     = item.artUri?.toString() ?? '';
-
-    // Navigate directly — no slide-down animation. The slide-down reveals the
-    // album page beneath which causes a flash. Instead let the post-playback
-    // screen fade in on top of the player (its route uses a fade transition).
-    GoRouter.of(context).go(
-      '/post-playback'
-      '?artistId=${Uri.encodeComponent(artistId)}'
-      '&artistName=${Uri.encodeComponent(artistName)}'
-      '&title=${Uri.encodeComponent(title)}'
-      '&artUrl=${Uri.encodeComponent(artUrl)}',
-    );
   }
 
   void _onDragUpdate(DragUpdateDetails d) {

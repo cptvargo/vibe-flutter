@@ -96,7 +96,7 @@ class _MixPickerScreenState extends ConsumerState<MixPickerScreen> {
       final results = await Future.wait(futures);
       final tracks = results.expand((l) => l).map(VibeTrack.fromJellyfin).toList()..shuffle();
       if (tracks.isEmpty) return;
-      ref.read(audioHandlerProvider).playTracks(tracks);
+      ref.read(audioHandlerProvider).playTracks(tracks, playbackContext: 'station');
     } catch (e) {
       debugPrint('MixPicker._playMix error: $e');
     } finally {

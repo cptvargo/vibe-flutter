@@ -7,7 +7,6 @@ import '../screens/artist_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/mix_picker_screen.dart';
 import '../screens/player_screen.dart';
-import '../screens/post_playback_screen.dart';
 import '../widgets/main_shell.dart';
 
 final GoRouter router = GoRouter(
@@ -60,28 +59,6 @@ final GoRouter router = GoRouter(
           builder: (context, state) => const AllArtistsScreen(),
         ),
       ],
-    ),
-
-    // Post-playback "You might enjoy" screen — shown after queue ends naturally.
-    GoRoute(
-      path: '/post-playback',
-      pageBuilder: (context, state) {
-        final q = state.uri.queryParameters;
-        return CustomTransitionPage(
-          key: state.pageKey,
-          transitionDuration: const Duration(milliseconds: 500),
-          child: PostPlaybackScreen(
-            artistId:   q['artistId']   ?? '',
-            artistName: q['artistName'] ?? '',
-            title:      q['title']      ?? '',
-            artUrl:     q['artUrl']     ?? '',
-          ),
-          transitionsBuilder: (context, animation, _, child) {
-            final fade = CurvedAnimation(parent: animation, curve: Curves.easeInOut);
-            return FadeTransition(opacity: fade, child: child);
-          },
-        );
-      },
     ),
 
     // Player stays at root level — it's a full-screen modal overlay, not a

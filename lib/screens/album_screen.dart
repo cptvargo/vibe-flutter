@@ -28,9 +28,11 @@ class AlbumScreen extends ConsumerStatefulWidget {
 }
 
 class _AlbumScreenState extends ConsumerState<AlbumScreen> {
-  List<VibeTrack> _tracks     = [];
-  bool            _loading    = true;
-  VibeTheme?      _albumTheme;
+  List<VibeTrack>              _tracks         = [];
+  bool                         _loading        = true;
+  VibeTheme?                   _albumTheme;
+  String?                      _artistId;
+  List<Map<String, dynamic>>   _similarArtists = [];
 
   @override
   void initState() {
@@ -55,13 +57,27 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
       final result = await JellyfinApi.getAlbumTracks(widget.albumId);
       final items  = ((result['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       if (mounted) {
+        final tracks = items.map((j) => VibeTrack.fromJellyfin(j, isAI: isAI)).toList();
         setState(() {
-          _tracks  = items.map((j) => VibeTrack.fromJellyfin(j, isAI: isAI)).toList();
+          _tracks  = tracks;
           _loading = false;
         });
+        if (tracks.isNotEmpty) {
+          _artistId = tracks.first.artistId;
+          _loadSimilarArtists();
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadSimilarArtists() async {
+    final id = _artistId;
+    if (id == null || id.isEmpty) return;
+    final results = await JellyfinApi.getSimilarArtistsByGenre(id, limit: 8);
+    if (mounted && results.isNotEmpty) {
+      setState(() => _similarArtists = results);
     }
   }
 
@@ -312,6 +328,15 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                       childCount: _tracks.length,
                     ),
                   ),
+                  // ── You might also like ──────────────────────────────────
+                  if (_similarArtists.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: _YouMightAlsoLike(
+                        artists: _similarArtists,
+                        theme:   theme,
+                      ),
+                    ),
+
                   const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
                 ],
               ],
@@ -345,6 +370,102 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
 
           // MiniPlayer
           const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
+        ],
+      ),
+    );
+  }
+}
+
+class _YouMightAlsoLike extends StatelessWidget {
+  final List<Map<String, dynamic>> artists;
+  final VibeTheme                  theme;
+
+  const _YouMightAlsoLike({required this.artists, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(color: Colors.white.withAlpha(0x18), height: 1),
+          const SizedBox(height: 20),
+          Text(
+            'You might also like',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 108,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: artists.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 16),
+              itemBuilder: (context, i) {
+                final a      = artists[i];
+                final id     = a['Id']   as String? ?? '';
+                final name   = a['Name'] as String? ?? '';
+                final artUrl = JellyfinApi.imageUrl(id, size: 200);
+                return GestureDetector(
+                  onTap: () => context.push(
+                    '/artist/$id?name=${Uri.encodeComponent(name)}',
+                  ),
+                  child: SizedBox(
+                    width: 80,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 72, height: 72,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: theme.surface,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withAlpha(0x44),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: CachedNetworkImage(
+                              imageUrl: artUrl,
+                              width: 72, height: 72,
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) => Container(color: theme.surface),
+                              errorWidget: (_, _, _) => Icon(
+                                Icons.person_rounded,
+                                color: theme.textFaint,
+                                size: 32,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          name,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: theme.textDim,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );

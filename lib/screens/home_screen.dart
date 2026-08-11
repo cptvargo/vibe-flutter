@@ -91,7 +91,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             if (name.isEmpty || name.contains(','))         return false;
             return seen.add(name.toLowerCase());
           })
-          .toList();
+          .toList()
+          ..shuffle();
 
       setState(() {
         _recentTracks = RecentlyPlayedService.tracks;
@@ -151,7 +152,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ref.read(isAIProvider.notifier).state = false;
           ref.read(playerOpenProvider.notifier).state = true;
           if (mounted) context.push('/player');
-          handler.playTracks([...tracks]..shuffle());
+          handler.playTracks([...tracks]..shuffle(), playbackContext: 'station');
           return;
 
         case 'vibe_radio':
@@ -164,7 +165,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               .map(VibeTrack.fromJellyfin)
               .toList()..shuffle();
           if (tracks.isEmpty) return;
-          handler.playTracks(tracks);
+          handler.playTracks(tracks, playbackContext: 'station');
           return;
 
         case 'artist_mix':
@@ -185,7 +186,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               .map(VibeTrack.fromJellyfin)
               .toList();
           if (tracks.isEmpty) return;
-          handler.playTracks(tracks);
+          handler.playTracks(tracks, playbackContext: 'station');
           return;
       }
     } catch (e) {

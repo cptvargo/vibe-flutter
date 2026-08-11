@@ -163,7 +163,7 @@ class _AIHomeScreenState extends ConsumerState<AIHomeScreen>
           ref.read(isAIProvider.notifier).state = true;
           ref.read(playerOpenProvider.notifier).state = true;
           if (mounted) context.push('/player');
-          handler.playTracks([...tracks]..shuffle());
+          handler.playTracks([...tracks]..shuffle(), playbackContext: 'station');
           return;
 
         case 'ai_radio':
@@ -176,7 +176,7 @@ class _AIHomeScreenState extends ConsumerState<AIHomeScreen>
               .map((j) => VibeTrack.fromJellyfin(j, isAI: true))
               .toList()..shuffle();
           if (tracks.isEmpty) return;
-          handler.playTracks(tracks);
+          handler.playTracks(tracks, playbackContext: 'station');
           return;
 
         case 'ai_artist':
@@ -197,7 +197,7 @@ class _AIHomeScreenState extends ConsumerState<AIHomeScreen>
               .map((j) => VibeTrack.fromJellyfin(j, isAI: true))
               .toList();
           if (tracks.isEmpty) return;
-          handler.playTracks(tracks);
+          handler.playTracks(tracks, playbackContext: 'station');
           return;
       }
     } catch (e) {

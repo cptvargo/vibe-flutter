@@ -51,7 +51,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       if (items.isEmpty) return;
       final tracks = items.map((j) => VibeTrack.fromJellyfin(j, isAI: isAI)).toList();
       if (shuffle) tracks.shuffle();
-      ref.read(audioHandlerProvider).playTracks(tracks, startIndex: 0);
+      ref.read(audioHandlerProvider).playTracks(tracks, startIndex: 0, playbackContext: 'shuffle');
     } catch (e) {
       debugPrint('ArtistScreen._playAll error: $e');
     } finally {
