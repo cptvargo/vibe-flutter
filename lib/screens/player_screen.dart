@@ -40,7 +40,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   double _dragOffset = 0;
   late final AnimationController _snapCtrl;
   Animation<double>? _snapAnim;
-  StreamSubscription<MediaItem?>? _completionSub;
+  StreamSubscription<PlaybackState>? _completionSub;
+  StreamSubscription<MediaItem?>? _itemSub;
+  MediaItem? _lastItem;
+  bool _queueLoaded = false;
+  Timer? _queueEndTimer;
   // Store notifier ref so we can safely use it in dispose()
   StateController<bool>? _playerOpenCtrl;
 
@@ -57,10 +61,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final handler = ref.read(audioHandlerProvider);
-      // Dismiss the player when the queue empties naturally (last track ended).
-      // mediaItem becomes null exactly when _onTrackNaturalEnd clears the queue.
-      _completionSub = handler.mediaItem.listen((item) {
-        if (item == null && mounted) _animateDismiss();
+
+      // Track the current item so post-playback screen knows what was playing.
+      _itemSub = handler.mediaItem.listen((item) {
+        if (item != null) _lastItem = item;
+      });
+
+      // AudioProcessingState.completed fires only when actual playback ends —
+      // not during queue setup or track swaps — so this is the right signal.
+      _completionSub = handler.playbackState.listen((state) {
+        if (!mounted) return;
+        // Once we see the player actually playing, the queue is loaded.
+        if (state.playing) _queueLoaded = true;
+
+        if (state.processingState == AudioProcessingState.completed && _queueLoaded) {
+          // Short debounce in case the handler auto-advances to a next track.
+          _queueEndTimer?.cancel();
+          _queueEndTimer = Timer(const Duration(milliseconds: 400), () {
+            if (!mounted) return;
+            // Still completed after 400 ms → genuinely nothing left to play.
+            if (handler.playbackState.value.processingState !=
+                AudioProcessingState.completed) return;
+            final isRadio = _lastItem?.extras?['isRadio'] as bool? ?? false;
+            if (!isRadio) {
+              _navigateToPostPlayback();
+            } else {
+              _animateDismiss();
+            }
+          });
+        } else if (state.processingState != AudioProcessingState.completed) {
+          _queueEndTimer?.cancel();
+        }
       });
     });
   }
@@ -68,6 +99,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   void dispose() {
     _completionSub?.cancel();
+    _itemSub?.cancel();
+    _queueEndTimer?.cancel();
     _snapCtrl.dispose();
     _playerOpenCtrl?.state = false; // safe — stored reference, not ref.read()
     super.dispose();
@@ -85,6 +118,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _snapCtrl.forward(from: 0).then((_) {
       if (mounted) Navigator.pop(context);
     });
+  }
+
+  void _navigateToPostPlayback() {
+    if (!mounted) return;
+    _playerOpenCtrl?.state = false;
+    final item       = _lastItem!;
+    final artistId   = item.extras?['artistId'] as String? ?? '';
+    final artistName = item.artist ?? '';
+    final title      = item.album?.isNotEmpty == true ? item.album! : item.title;
+    final artUrl     = item.artUri?.toString() ?? '';
+
+    // Navigate directly — no slide-down animation. The slide-down reveals the
+    // album page beneath which causes a flash. Instead let the post-playback
+    // screen fade in on top of the player (its route uses a fade transition).
+    GoRouter.of(context).go(
+      '/post-playback'
+      '?artistId=${Uri.encodeComponent(artistId)}'
+      '&artistName=${Uri.encodeComponent(artistName)}'
+      '&title=${Uri.encodeComponent(title)}'
+      '&artUrl=${Uri.encodeComponent(artUrl)}',
+    );
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
@@ -142,7 +196,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             child: StreamBuilder<MediaItem?>(
               stream: handler.mediaItem,
               builder: (context, snap) {
-                final item = snap.data;
+                // Fall back to _lastItem during brief null transitions (queue setup,
+                // track swaps). Only show black if we've never seen any item.
+                final item = snap.data ?? _lastItem;
                 if (item == null) {
                   return Scaffold(
                     backgroundColor: Colors.black,
@@ -583,9 +639,6 @@ class _Content extends ConsumerWidget {
             ),
           ),
         ),
-
-        // Similar Artists row — shown below the artwork, above controls
-        _SimilarArtistsRow(artistId: item.extras?['artistId'] as String?),
 
         // Controls panel — subtly elevated surface in the dark zone below the art.
         // The rounded top + dark fill creates a physical separation from the glow.
@@ -1377,112 +1430,3 @@ class _WaveformPainter extends CustomPainter {
       colorTail    != old.colorTail;
 }
 
-// ── Similar Artists row ─────────────────────────────────────────────────────
-class _SimilarArtistsRow extends ConsumerWidget {
-  final String? artistId;
-  const _SimilarArtistsRow({required this.artistId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (artistId == null || artistId!.isEmpty) return const SizedBox.shrink();
-    final theme = ref.watch(playerThemeProvider);
-
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: JellyfinApi.getSimilarArtistsByGenre(artistId!),
-      builder: (context, snap) {
-        final artists = snap.data ?? [];
-        if (artists.isEmpty) return const SizedBox.shrink();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(28, 16, 28, 10),
-              child: Text(
-                'SIMILAR ARTISTS',
-                style: TextStyle(
-                  color: Colors.white.withAlpha(0x55),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ),
-            SizedBox(
-              height: 100,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 28),
-                itemCount: artists.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 20),
-                itemBuilder: (context, i) {
-                  final a    = artists[i];
-                  final id   = a['Id']   as String? ?? '';
-                  final name = a['Name'] as String? ?? '';
-                  return GestureDetector(
-                    onTap: () {
-                      ref.read(playerOpenProvider.notifier).state = false;
-                      GoRouter.of(context).go(
-                        '/artist/$id?name=${Uri.encodeComponent(name)}',
-                      );
-                    },
-                    child: SizedBox(
-                      width: 72,
-                      child: Column(
-                        children: [
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: theme.accentBright.withAlpha(0x44),
-                                  blurRadius: 12,
-                                ),
-                              ],
-                            ),
-                            child: CircleAvatar(
-                              radius: 34,
-                              backgroundColor: theme.accent.withAlpha(0x44),
-                              child: ClipOval(
-                                child: Image.network(
-                                  JellyfinApi.imageUrl(id, size: 100),
-                                  width: 68, height: 68,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Text(
-                                    name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                    style: TextStyle(
-                                      color: theme.accentBright,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withAlpha(0xAA),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 4),
-          ],
-        );
-      },
-    );
-  }
-}
