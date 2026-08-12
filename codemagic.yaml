@@ -177,13 +177,13 @@ workflows:
         script: flutter analyze --no-fatal-infos
         ignore_failure: true
 
-      - name: Build release APK
+      - name: Build release AAB
         script: |
-          flutter build apk --release \
+          flutter build appbundle --release \
             --build-number=$BUILD_NUMBER
 
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.aab
 
     publishing:
       email:
