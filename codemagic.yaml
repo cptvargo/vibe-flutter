@@ -1,6 +1,7 @@
 # ViBE — Codemagic CI/CD Pipeline
 # ─────────────────────────────────────────────────────────────────────────────
-# ios-testflight  →  TestFlight on every push to main  (Mac M2 runner)
+# ios-testflight   →  TestFlight on every push to main  (Mac M2 runner)
+# android-release  →  Release APK on every push to main (Linux runner)
 #
 # ── Environment variable group: vibe-secrets ─────────────────────────────────
 # Codemagic → Teams → Global variables and secrets → vibe-secrets:
@@ -12,6 +13,15 @@
 #   VIBE_COLOR_SERVER      Color server URL
 #   SUPABASE_URL           Supabase project URL
 #   SUPABASE_ANON_KEY      Supabase anon key
+#   CM_KEYSTORE            Base64-encoded Android release keystore (.jks)
+#   CM_KEYSTORE_PASSWORD   Keystore password
+#   CM_KEY_ALIAS           Key alias inside the keystore
+#   CM_KEY_PASSWORD        Key password
+#
+# ── Generate a keystore (one-time, run locally) ───────────────────────────────
+# keytool -genkey -v -keystore vibe-release.jks -alias vibe -keyalg RSA \
+#   -keysize 2048 -validity 10000
+# base64 -i vibe-release.jks | tr -d '\n'   ← paste output as CM_KEYSTORE
 #
 # ── App Store Connect integration ────────────────────────────────────────────
 # Uses the "Codemagic" App Store Connect integration (already configured).
@@ -105,3 +115,80 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+
+  android-release:
+    name: Android — Release APK
+    max_build_duration: 60
+    instance_type: linux_x2
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+
+    environment:
+      flutter: 3.44.4
+      groups:
+        - vibe-secrets
+      vars:
+        CM_KEYSTORE_PATH: /tmp/vibe-release.jks
+
+    scripts:
+      - name: Create private config
+        script: |
+          python3 - <<'PY'
+          import os, pathlib
+          pathlib.Path("lib/config").mkdir(parents=True, exist_ok=True)
+          s     = os.environ["VIBE_SERVER_URL"].strip()
+          a     = os.environ["VIBE_API_KEY"].strip()
+          u     = os.environ["VIBE_USER_ID"].strip()
+          lib   = os.environ["VIBE_LIBRARY_ID"].strip()
+          ailib = os.environ["VIBE_AI_LIBRARY_ID"].strip()
+          cs    = os.environ["VIBE_COLOR_SERVER"].strip()
+          su    = os.environ["SUPABASE_URL"].strip()
+          sa    = os.environ["SUPABASE_ANON_KEY"].strip()
+          content = (
+            "class VibeConfig {\n"
+            f"  static const String serverUrl    = '{s}';\n"
+            f"  static const String apiKey       = '{a}';\n"
+            f"  static const String userId       = '{u}';\n"
+            f"  static const String vibeLibrary  = '{lib}';\n"
+            f"  static const String aiLibrary    = '{ailib}';\n"
+            f"  static const String colorServer  = '{cs}';\n"
+            f"  static const String supabaseUrl  = '{su}';\n"
+            f"  static const String supabaseAnon = '{sa}';\n"
+            "}\n"
+          )
+          pathlib.Path("lib/config/vibe_config.dart").write_text(content)
+          print("vibe_config.dart created")
+          PY
+
+      - name: Decode keystore
+        script: |
+          echo $CM_KEYSTORE | base64 --decode > $CM_KEYSTORE_PATH
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Flutter analyze
+        script: flutter analyze --no-fatal-infos
+        ignore_failure: true
+
+      - name: Build release APK
+        script: |
+          flutter build apk --release \
+            --build-number=$BUILD_NUMBER
+
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+
+    publishing:
+      email:
+        recipients:
+          - jvargas22@duck.com
+        notify:
+          success: true
+          failure: true
