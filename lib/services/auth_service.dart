@@ -37,9 +37,12 @@ class AuthService {
   // Sign out
   static Future<void> signOut() => supabase.auth.signOut();
 
-  // Password reset email
+  // Password reset email — deep link opens the app to /reset-password
   static Future<void> resetPassword(String email) =>
-      supabase.auth.resetPasswordForEmail(email);
+      supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'com.playvibemusic.vibe://reset-callback',
+      );
 
   // Fetch the current user's profile
   static Future<Map<String, dynamic>?> getProfile() async {

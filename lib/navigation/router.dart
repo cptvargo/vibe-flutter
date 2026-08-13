@@ -7,23 +7,32 @@ import '../screens/artist_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/mix_picker_screen.dart';
 import '../screens/player_screen.dart';
+import '../screens/reset_password_screen.dart';
 import '../widgets/main_shell.dart';
 
 final GoRouter router = GoRouter(
   initialLocation: '/',
   refreshListenable: authNotifier,
   redirect: (context, state) {
-    final loggedIn = authNotifier.isLoggedIn;
-    final atLogin  = state.matchedLocation == '/login';
+    final loggedIn  = authNotifier.isLoggedIn;
+    final atLogin   = state.matchedLocation == '/login';
+    final atReset   = state.matchedLocation == '/reset-password';
 
+    if (authNotifier.isPasswordRecovery) return '/reset-password';
     if (!loggedIn && !atLogin) return '/login';
     if (loggedIn  &&  atLogin) return '/';
+    if (!authNotifier.isPasswordRecovery && atReset) return '/';
     return null;
   },
   routes: [
     GoRoute(
       path: '/login',
       builder: (context, state) => const LoginScreen(),
+    ),
+
+    GoRoute(
+      path: '/reset-password',
+      builder: (context, state) => const ResetPasswordScreen(),
     ),
 
     // Root shell — album/artist/mix are nested so router.go('/album/:id')

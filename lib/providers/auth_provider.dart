@@ -9,12 +9,22 @@ import '../services/auth_service.dart';
 // on every sign-in / sign-out.
 class AuthNotifier extends ChangeNotifier {
   AuthNotifier() {
-    _sub = supabase.auth.onAuthStateChange.listen((_) => notifyListeners());
+    _sub = supabase.auth.onAuthStateChange.listen((state) {
+      _isPasswordRecovery = state.event == AuthChangeEvent.passwordRecovery;
+      notifyListeners();
+    });
   }
 
   late final StreamSubscription<AuthState> _sub;
+  bool _isPasswordRecovery = false;
 
-  bool get isLoggedIn => supabase.auth.currentSession != null;
+  bool get isLoggedIn         => supabase.auth.currentSession != null;
+  bool get isPasswordRecovery => _isPasswordRecovery;
+
+  void clearPasswordRecovery() {
+    _isPasswordRecovery = false;
+    notifyListeners();
+  }
 
   @override
   void dispose() {
