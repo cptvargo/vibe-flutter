@@ -171,6 +171,10 @@ workflows:
         script: |
           echo $CM_KEYSTORE | base64 --decode > $CM_KEYSTORE_PATH
 
+      - name: Decode google-services.json
+        script: |
+          echo $GOOGLE_SERVICES_JSON | base64 --decode > android/app/google-services.json
+
       - name: Get Flutter packages
         script: flutter pub get
 

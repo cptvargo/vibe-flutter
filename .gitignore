@@ -1,6 +1,9 @@
 # Vibe private config (credentials — never commit)
 lib/config/vibe_config.dart
 
+# Firebase — injected by Codemagic at build time
+android/app/google-services.json
+
 # Apple private keys — upload to Codemagic, never commit
 *.p8
 
