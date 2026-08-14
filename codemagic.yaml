@@ -117,7 +117,7 @@ workflows:
         submit_to_testflight: true
 
   android-release:
-    name: Android — Release APK
+    name: Android — Firebase Distribution
     max_build_duration: 60
     instance_type: mac_mini_m2
 
@@ -133,6 +133,7 @@ workflows:
       flutter: 3.44.4
       groups:
         - vibe-secrets
+        - firebase
       vars:
         CM_KEYSTORE_PATH: /tmp/vibe-release.jks
 
@@ -177,13 +178,13 @@ workflows:
         script: flutter analyze --no-fatal-infos
         ignore_failure: true
 
-      - name: Build release AAB
+      - name: Build release APK
         script: |
-          flutter build appbundle --release \
+          flutter build apk --release \
             --build-number=$BUILD_NUMBER
 
     artifacts:
-      - build/app/outputs/bundle/release/app-release.aab
+      - build/app/outputs/flutter-apk/app-release.apk
 
     publishing:
       email:
@@ -192,3 +193,12 @@ workflows:
         notify:
           success: true
           failure: true
+      firebase:
+        firebase_token: $FIREBASE_TOKEN
+        android:
+          app: $FIREBASE_APP_ID
+          artifact_type: apk
+          testers:
+            - jvargas22@duck.com
+            - alexiscoleman291@gmail.com
+            - djboyce22@gmail.com

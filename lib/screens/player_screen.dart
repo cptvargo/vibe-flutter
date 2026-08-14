@@ -882,10 +882,10 @@ class _QueueSheet extends StatelessWidget {
             color: theme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
-          child: StreamBuilder<int?>(
-            stream: handler.currentIndexStream,
-            builder: (context, indexSnap) {
-              final currentIndex = indexSnap.data ?? 0;
+          child: StreamBuilder<MediaItem?>(
+            stream: handler.mediaItem,
+            builder: (context, mediaSnap) {
+              final currentId = mediaSnap.data?.id;
               final tracks = handler.queue.value;
 
               return Column(
@@ -931,7 +931,7 @@ class _QueueSheet extends StatelessWidget {
                       itemCount: tracks.length,
                       itemBuilder: (context, i) {
                         final track = tracks[i];
-                        final isCurrent = i == currentIndex;
+                        final isCurrent = track.id == currentId;
                         return Material(
                           color: Colors.transparent,
                           child: ListTile(
