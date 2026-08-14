@@ -200,9 +200,7 @@ workflows:
       firebase:
         firebase_token: $FIREBASE_TOKEN
         android:
-          app: $FIREBASE_APP_ID
+          app_id: $FIREBASE_APP_ID
           artifact_type: apk
-          testers:
-            - jvargas22@duck.com
-            - alexiscoleman291@gmail.com
-            - djboyce22@gmail.com
+          groups:
+            - vibe-testers
