@@ -245,7 +245,8 @@ class _AlbumRow extends StatelessWidget {
     final name   = item['Name']        as String? ?? '';
     final artist = item['AlbumArtist'] as String?
         ?? (item['Artists'] as List?)?.firstOrNull as String? ?? '';
-    final url    = JellyfinApi.imageUrl(id, size: 100);
+    final tag    = (item['ImageTags'] as Map?)?['Primary'] as String?;
+    final url    = JellyfinApi.imageUrl(id, size: 100, tag: tag);
 
     return GestureDetector(
       onTap: onTap,
@@ -307,7 +308,8 @@ class _TrackRow extends StatelessWidget {
     final name   = item['Name'] as String? ?? '';
     final artist = item['AlbumArtist'] as String?
         ?? (item['Artists'] as List?)?.firstOrNull as String? ?? '';
-    final url    = JellyfinApi.imageUrl(albumId, size: 100);
+    final tag    = item['AlbumPrimaryImageTag'] as String?;
+    final url    = JellyfinApi.imageUrl(albumId, size: 100, tag: tag);
 
     return GestureDetector(
       onTap: onTap,

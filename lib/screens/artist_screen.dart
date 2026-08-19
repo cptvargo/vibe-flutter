@@ -293,7 +293,8 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                   (context, i) {
                     final album  = _albums[i];
                     final albumId = album['Id'] as String? ?? '';
-                    final artUrl  = JellyfinApi.imageUrl(albumId, size: 400);
+                    final tag     = (album['ImageTags'] as Map?)?['Primary'] as String?;
+                    final artUrl  = JellyfinApi.imageUrl(albumId, size: 400, tag: tag);
                     final year    = album['ProductionYear'] as int?;
                     return GestureDetector(
                       onTap: () {

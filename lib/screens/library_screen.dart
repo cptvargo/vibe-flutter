@@ -256,7 +256,8 @@ class _AlbumCell extends StatelessWidget {
     final name   = album['Name']         as String? ?? '';
     final artist = album['AlbumArtist']  as String?
         ?? (album['Artists'] as List?)?.firstOrNull as String? ?? '';
-    final artUrl = JellyfinApi.imageUrl(id, size: 300);
+    final tag    = (album['ImageTags'] as Map?)?['Primary'] as String?;
+    final artUrl = JellyfinApi.imageUrl(id, size: 300, tag: tag);
 
     return GestureDetector(
       onTap: onTap,

@@ -305,7 +305,8 @@ class VibeAlbumCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final itemId = item['Id'] as String? ?? '';
-    final artUrl = itemId.isNotEmpty ? JellyfinApi.imageUrl(itemId, size: 300) : null;
+    final tag    = (item['ImageTags'] as Map?)?['Primary'] as String?;
+    final artUrl = itemId.isNotEmpty ? JellyfinApi.imageUrl(itemId, size: 300, tag: tag) : null;
 
     return VibeBounce(
       onTap: onPress,
@@ -381,7 +382,8 @@ class VibeTrackRow extends StatelessWidget {
     final albumId = track['AlbumId']  as String?
         ?? track['ParentId'] as String?
         ?? track['Id']       as String? ?? '';
-    final artUrl = albumId.isNotEmpty ? JellyfinApi.imageUrl(albumId, size: 100) : null;
+    final tag    = track['AlbumPrimaryImageTag'] as String?;
+    final artUrl = albumId.isNotEmpty ? JellyfinApi.imageUrl(albumId, size: 100, tag: tag) : null;
 
     return VibeBounce(
       onTap: onPress,
