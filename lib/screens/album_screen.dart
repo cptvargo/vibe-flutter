@@ -265,7 +265,11 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                     child: Center(child: CircularProgressIndicator()),
                   )
                 else ...[
-                  StreamBuilder<MediaItem?>(
+                  StreamBuilder<PlaybackState>(
+                    stream: ref.read(audioHandlerProvider).playbackState,
+                    builder: (context, pbSnap) {
+                      final isPlaying = pbSnap.data?.playing ?? false;
+                      return StreamBuilder<MediaItem?>(
                     stream: ref.read(audioHandlerProvider).mediaItem,
                     builder: (context, snap) {
                       final currentId = snap.data?.id;
@@ -291,6 +295,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                                             ? Center(
                                                 child: _NowPlayingBars(
                                                   color: theme.accent,
+                                                  isPlaying: isPlaying,
                                                 ),
                                               )
                                             : Text(
@@ -350,6 +355,8 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                           childCount: _tracks.length,
                         ),
                       );
+                    },
+                  );
                     },
                   ),
                   // ── You might also like ──────────────────────────────────
@@ -499,7 +506,8 @@ class _YouMightAlsoLike extends StatelessWidget {
 // Three animated bars — now-playing indicator in the track list
 class _NowPlayingBars extends StatefulWidget {
   final Color color;
-  const _NowPlayingBars({required this.color});
+  final bool  isPlaying;
+  const _NowPlayingBars({required this.color, required this.isPlaying});
   @override
   State<_NowPlayingBars> createState() => _NowPlayingBarsState();
 }
@@ -514,7 +522,18 @@ class _NowPlayingBarsState extends State<_NowPlayingBars>
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
-    )..repeat();
+    );
+    if (widget.isPlaying) _ctrl.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_NowPlayingBars old) {
+    super.didUpdateWidget(old);
+    if (widget.isPlaying && !_ctrl.isAnimating) {
+      _ctrl.repeat();
+    } else if (!widget.isPlaying && _ctrl.isAnimating) {
+      _ctrl.stop();
+    }
   }
 
   @override
