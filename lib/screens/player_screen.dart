@@ -584,7 +584,7 @@ class _Content extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      // Album art with depth shadows
+                      // Album art with depth shadows + double-tap seek
                       Container(
                         width: size, height: size,
                         decoration: BoxDecoration(
@@ -603,18 +603,12 @@ class _Content extends ConsumerWidget {
                             ),
                           ],
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: artUrl != null
-                              ? CachedNetworkImage(
-                                  imageUrl: artUrl!,
-                                  width: double.infinity,
-                                  height: double.infinity,
-                                  fit: BoxFit.cover,
-                                  placeholder: (_, _) => Container(color: theme.surface),
-                                  errorWidget: (_, _, _) => Container(color: theme.surface),
-                                )
-                              : Container(color: theme.surface),
+                        child: _SeekableAlbumArt(
+                          artUrl: artUrl,
+                          size: size,
+                          ambient: ambient,
+                          handler: handler,
+                          theme: theme,
                         ),
                       ),
                     ],
@@ -1269,14 +1263,174 @@ class _PlainIconButton extends StatelessWidget {
   }
 }
 
+// ── Seekable album art — double-tap left/right for ±10s (Split Bleed) ───────
+class _SeekableAlbumArt extends StatefulWidget {
+  final String?          artUrl;
+  final double           size;
+  final AmbientTheme     ambient;
+  final VibeAudioHandler handler;
+  final VibeTheme        theme;
+
+  const _SeekableAlbumArt({
+    required this.artUrl,
+    required this.size,
+    required this.ambient,
+    required this.handler,
+    required this.theme,
+  });
+
+  @override
+  State<_SeekableAlbumArt> createState() => _SeekableAlbumArtState();
+}
+
+class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
+    with TickerProviderStateMixin {
+  late final AnimationController _bleedCtrl;
+  late final AnimationController _labelCtrl;
+  late final Animation<double>   _bleedOpacity;
+  late final Animation<double>   _labelOpacity;
+  late final Animation<double>   _labelScale;
+
+  bool _isRight = false;
+  Duration _pos = Duration.zero;
+  StreamSubscription<Duration>? _posSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _posSub = widget.handler.positionStream.listen((p) => _pos = p);
+
+    _bleedCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _labelCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+
+    _bleedOpacity = TweenSequence([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0),  weight: 18),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.88), weight: 56),
+      TweenSequenceItem(tween: Tween(begin: 0.88, end: 0.0), weight: 26),
+    ]).animate(CurvedAnimation(parent: _bleedCtrl, curve: Curves.easeInOut));
+
+    _labelOpacity = TweenSequence([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 0.0), weight: 5),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 17),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 28),
+    ]).animate(_labelCtrl);
+
+    _labelScale = TweenSequence([
+      TweenSequenceItem(tween: Tween(begin: 0.0,  end: 0.0),  weight: 5),
+      TweenSequenceItem(tween: Tween(begin: 0.72, end: 1.08), weight: 17),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0),  weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.0,  end: 0.94), weight: 28),
+    ]).animate(CurvedAnimation(parent: _labelCtrl, curve: Curves.easeOut));
+  }
+
+  @override
+  void dispose() {
+    _posSub?.cancel();
+    _bleedCtrl.dispose();
+    _labelCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onDoubleTap(TapDownDetails d) {
+    final isRight = d.localPosition.dx > widget.size / 2;
+    setState(() => _isRight = isRight);
+
+    final delta = Duration(seconds: isRight ? 10 : -10);
+    final maxDur = widget.handler.duration ?? const Duration(hours: 1);
+    var target = _pos + delta;
+    if (target < Duration.zero) target = Duration.zero;
+    if (target > maxDur) target = maxDur;
+    widget.handler.seek(target);
+
+    _bleedCtrl.forward(from: 0);
+    _labelCtrl.forward(from: 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = widget.ambient.waveformActive;
+
+    return GestureDetector(
+      onDoubleTapDown: _onDoubleTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Album image
+            widget.artUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: widget.artUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => Container(color: widget.theme.surface),
+                    errorWidget: (_, _, _) => Container(color: widget.theme.surface),
+                  )
+                : Container(color: widget.theme.surface),
+
+            // Split Bleed overlay
+            AnimatedBuilder(
+              animation: _bleedCtrl,
+              builder: (_, child) => Opacity(
+                opacity: _bleedOpacity.value,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: _isRight ? Alignment.centerLeft : Alignment.centerRight,
+                      end:   _isRight ? Alignment.centerRight : Alignment.centerLeft,
+                      colors: [
+                        Colors.transparent,
+                        accentColor.withAlpha(0x66),
+                        accentColor.withAlpha(0xCC),
+                      ],
+                      stops: const [0.42, 0.58, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Seek label
+            AnimatedBuilder(
+              animation: _labelCtrl,
+              builder: (_, child) => Opacity(
+                opacity: _labelOpacity.value,
+                child: Align(
+                  alignment: Alignment(_isRight ? 0.72 : -0.72, 0),
+                  child: Transform.scale(
+                    scale: _labelScale.value,
+                    child: Text(
+                      _isRight ? '›› +10s' : '‹‹ −10s',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
+                        shadows: [
+                          Shadow(color: accentColor, blurRadius: 24),
+                          const Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Waveform seek bar ───────────────────────────────────────────────────────
-class _WaveformSeekBar extends StatelessWidget {
+class _WaveformSeekBar extends StatefulWidget {
   final double progress; // 0.0 – 1.0
   final String trackId;
-  final Color  colorAnchor;   // darkVibrant  — deep start
-  final Color  colorMid;      // vibrant      — main energy
-  final Color  colorEnd;      // lightVibrant — bright bloom
-  final Color  colorTail;     // muted        — soft resolution
+  final Color  colorAnchor;
+  final Color  colorMid;
+  final Color  colorEnd;
+  final Color  colorTail;
   final Color  inactiveColor;
   final ValueChanged<double> onSeek;
 
@@ -1291,32 +1445,41 @@ class _WaveformSeekBar extends StatelessWidget {
     required this.onSeek,
   });
 
-  void _handleTap(BuildContext context, Offset globalPos) {
+  @override
+  State<_WaveformSeekBar> createState() => _WaveformSeekBarState();
+}
+
+class _WaveformSeekBarState extends State<_WaveformSeekBar> {
+  double? _drag; // local drag position; null = use widget.progress
+
+  double _ratio(Offset globalPos) {
     final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
+    if (box == null) return 0;
     final local = box.globalToLocal(globalPos);
-    onSeek((local.dx / box.size.width).clamp(0.0, 1.0));
+    return (local.dx / box.size.width).clamp(0.0, 1.0);
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown:               (d) => _handleTap(context, d.globalPosition),
-      onHorizontalDragUpdate:  (d) => _handleTap(context, d.globalPosition),
+      onTapDown: (d) => widget.onSeek(_ratio(d.globalPosition)),
+      onHorizontalDragUpdate: (d) => setState(() => _drag = _ratio(d.globalPosition)),
+      onHorizontalDragEnd:    (_) { if (_drag != null) { widget.onSeek(_drag!); setState(() => _drag = null); } },
+      onHorizontalDragCancel: ()  => setState(() => _drag = null),
       child: SizedBox(
         height: 56,
         width: double.infinity,
         child: CustomPaint(
           painter: _WaveformPainter(
-            progress:     progress,
-            colorAnchor:  colorAnchor,
-            colorMid:     colorMid,
-            colorEnd:     colorEnd,
-            colorTail:    colorTail,
-            inactiveColor: inactiveColor,
+            progress:      _drag ?? widget.progress,
+            colorAnchor:   widget.colorAnchor,
+            colorMid:      widget.colorMid,
+            colorEnd:      widget.colorEnd,
+            colorTail:     widget.colorTail,
+            inactiveColor: widget.inactiveColor,
           ),
-          key: ValueKey(trackId),
+          key: ValueKey(widget.trackId),
         ),
       ),
     );
