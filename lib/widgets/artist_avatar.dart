@@ -5,9 +5,7 @@ import '../theme/vibe_theme.dart';
 
 // Local asset overrides — keyed by lowercase artist name, value is asset path.
 // Add an entry here whenever you have a custom artist image in assets/artists/.
-const _kArtistAssets = <String, String>{
-  'nameless generation': 'assets/artists/NG.png',
-};
+const _kArtistAssets = <String, String>{};
 
 class ArtistAvatar extends StatelessWidget {
   /// Returns the bundled asset path for [name], or null if none registered.
