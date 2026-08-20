@@ -3,7 +3,6 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
-import '../screens/ai_home_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/library_screen.dart';
 import '../screens/search_screen.dart';
@@ -80,10 +79,7 @@ class _MainShellState extends ConsumerState<MainShell> {
             children: [
               TopNav(
                 activeTab: _activeTab,
-                onTabChange: (tab) {
-                  setState(() => _activeTab = tab);
-                  ref.read(isAIProvider.notifier).state = (tab == 'ai');
-                },
+                onTabChange: (tab) => setState(() => _activeTab = tab),
               ),
               Expanded(child: _body(theme)),
             ],
@@ -99,7 +95,6 @@ class _MainShellState extends ConsumerState<MainShell> {
       case 'home':    return const HomeScreen();
       case 'search':  return const SearchScreen();
       case 'library': return const LibraryScreen();
-      case 'ai':       return const AIHomeScreen();
       case 'settings': return const SettingsScreen();
       default:         return const HomeScreen();
     }
