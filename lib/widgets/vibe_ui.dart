@@ -2,10 +2,85 @@ import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../api/jellyfin_api.dart';
+import '../theme/palette_service.dart';
 import '../theme/vibe_theme.dart';
 import 'artist_avatar.dart';
 
 typedef VibeStation = ({String id, String label, IconData icon, String sub});
+
+// ── AI artist registry ────────────────────────────────────────────────────────
+
+const _kAIArtists = <String>{'zæyus', 'nameless generation'};
+
+bool _isAIArtist(String name) =>
+    _kAIArtists.contains(name.trim().toLowerCase());
+
+// ── AI badge ─────────────────────────────────────────────────────────────────
+
+class _AIBadge extends StatefulWidget {
+  final String itemId;
+  const _AIBadge({required this.itemId});
+
+  @override
+  State<_AIBadge> createState() => _AIBadgeState();
+}
+
+class _AIBadgeState extends State<_AIBadge>
+    with SingleTickerProviderStateMixin {
+  Color _color = const Color(0xFF9F67F0);
+  late final AnimationController _ctrl;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _extract();
+  }
+
+  Future<void> _extract() async {
+    final palette = await PaletteService.extractFromUrl(
+      JellyfinApi.colorExtractionUrl(widget.itemId),
+      widget.itemId,
+    );
+    if (!mounted) return;
+    if (palette != null) setState(() => _color = palette.lightVibrant);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: _fade,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color:        _color.withAlpha(0xCC),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _color, width: 0.8),
+        boxShadow: [
+          BoxShadow(color: _color.withAlpha(0xBB), blurRadius: 10, spreadRadius: 1),
+        ],
+      ),
+      child: const Text(
+        '✦ AI',
+        style: TextStyle(
+          color:       Colors.white,
+          fontSize:    9,
+          fontWeight:  FontWeight.w800,
+          letterSpacing: 0.6,
+          shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+        ),
+      ),
+    ),
+  );
+}
 
 // ── Bounce tap wrapper ────────────────────────────────────────────────────────
 
@@ -304,9 +379,12 @@ class VibeAlbumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final itemId = item['Id'] as String? ?? '';
-    final tag    = (item['ImageTags'] as Map?)?['Primary'] as String?;
-    final artUrl = itemId.isNotEmpty ? JellyfinApi.imageUrl(itemId, size: 300, tag: tag) : null;
+    final itemId     = item['Id'] as String? ?? '';
+    final tag        = (item['ImageTags'] as Map?)?['Primary'] as String?;
+    final artUrl     = itemId.isNotEmpty ? JellyfinApi.imageUrl(itemId, size: 300, tag: tag) : null;
+    final artistName = item['AlbumArtist'] as String?
+        ?? (item['Artists'] as List?)?.firstOrNull as String? ?? '';
+    final isAI = _isAIArtist(artistName);
 
     return VibeBounce(
       onTap: onPress,
@@ -327,20 +405,29 @@ class VibeAlbumCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: artUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl:    artUrl,
-                        width:       size,
-                        height:      size,
-                        fit:         BoxFit.cover,
-                        placeholder: (_, _) =>
-                            Container(width: size, height: size, color: theme.surface),
-                        errorWidget: (_, _, _) =>
-                            Container(width: size, height: size, color: theme.surface),
-                      )
-                    : Container(width: size, height: size, color: theme.surface),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: artUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl:    artUrl,
+                            width:       size,
+                            height:      size,
+                            fit:         BoxFit.cover,
+                            placeholder: (_, _) =>
+                                Container(width: size, height: size, color: theme.surface),
+                            errorWidget: (_, _, _) =>
+                                Container(width: size, height: size, color: theme.surface),
+                          )
+                        : Container(width: size, height: size, color: theme.surface),
+                  ),
+                  if (isAI && itemId.isNotEmpty)
+                    Positioned(
+                      top: 7, right: 7,
+                      child: _AIBadge(itemId: itemId),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -462,6 +549,7 @@ class VibeArtistCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final id   = artist['Id']   as String? ?? '';
     final name = artist['Name'] as String? ?? '';
+    final isAI = _isAIArtist(name);
 
     return VibeBounce(
       onTap: onPress,
@@ -469,19 +557,29 @@ class VibeArtistCard extends StatelessWidget {
         width: size + 8,
         child: Column(
           children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                shape:     BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color:        theme.accentBright.withAlpha(0x66),
-                    blurRadius:   18,
-                    spreadRadius: 2,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape:     BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color:        theme.accentBright.withAlpha(0x66),
+                        blurRadius:   18,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: ArtistAvatar(id: id, name: name, size: size, theme: theme,
-                  imageTag: (artist['ImageTags'] as Map?)?['Primary'] as String?),
+                  child: ArtistAvatar(id: id, name: name, size: size, theme: theme,
+                      imageTag: (artist['ImageTags'] as Map?)?['Primary'] as String?),
+                ),
+                if (isAI && id.isNotEmpty)
+                  Positioned(
+                    top: -2, right: -2,
+                    child: _AIBadge(itemId: id),
+                  ),
+              ],
             ),
             const SizedBox(height: 6),
             Text(name,
