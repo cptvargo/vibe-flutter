@@ -263,7 +263,7 @@ class JellyfinApi {
   static Future<Map<String, dynamic>> search(String query, {int limit = 40}) async {
     final q = Uri.encodeComponent(query);
     final results = await Future.wait([
-      _get('/Users/$_user/Items?SearchTerm=$q'
+      _get('/Users/$_user/Items?SearchTerm=$q&ParentId=$_lib'
           '&IncludeItemTypes=Audio,MusicAlbum&Limit=$limit&Recursive=true'
           '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId'),
       _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib&SearchTerm=$q'

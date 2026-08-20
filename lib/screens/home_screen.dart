@@ -72,25 +72,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         JellyfinApi.getRecentAlbums(),
         JellyfinApi.getTopAlbums(),
         JellyfinApi.getArtists(),
-        JellyfinApi.getAIArtists(),   // used only to exclude AI artists from Home
       ]);
       if (!mounted) return;
-
-      // Build exclusion sets from AI artists — both ID and name for maximum coverage
-      final aiArtists = (results[3]['Items'] as List? ?? [])
-          .cast<Map<String, dynamic>>();
-      final aiArtistIds   = aiArtists.map((a) => a['Id']   as String? ?? '').toSet();
-      final aiArtistNames = aiArtists.map((a) => (a['Name'] as String? ?? '').trim().toLowerCase()).toSet();
 
       final seen = <String>{};
       final artists = (results[2]['Items'] as List? ?? [])
           .cast<Map<String, dynamic>>()
           .where((a) {
             final name = (a['Name'] as String? ?? '').trim();
-            final id   = a['Id'] as String? ?? '';
-            if (aiArtistIds.contains(id))                   return false;
-            if (aiArtistNames.contains(name.toLowerCase())) return false;
-            if (name.isEmpty || name.contains(','))         return false;
+            if (name.isEmpty || name.contains(',')) return false;
             return seen.add(name.toLowerCase());
           })
           .toList();
