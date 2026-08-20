@@ -190,6 +190,14 @@ class AuthService {
         .maybeSingle();
   }
 
+  // Permanently delete the current user's account and all associated data.
+  // Requires the delete_user() SQL function to exist in Supabase (SECURITY DEFINER).
+  static Future<void> deleteAccount() async {
+    if (user == null) return;
+    await supabase.rpc('delete_user');
+    await supabase.auth.signOut();
+  }
+
   static String _randomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rng = Random.secure();

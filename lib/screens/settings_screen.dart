@@ -111,6 +111,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       destructive: true,
                       onTap: _confirmSignOut,
                     ),
+                    _Divider(theme: theme),
+                    _ActionTile(
+                      theme: theme,
+                      icon: Icons.delete_forever_outlined,
+                      label: 'Delete Account',
+                      destructive: true,
+                      onTap: _confirmDeleteAccount,
+                    ),
                   ],
                 ),
               ]),
@@ -129,6 +137,98 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
+    );
+  }
+
+  void _confirmDeleteAccount() {
+    final ctrl    = TextEditingController();
+    var   deleting = false;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF12121E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24,
+            24 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Delete Account',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+              const SizedBox(height: 8),
+              const Text(
+                'This permanently deletes your account, server, and all invite codes. This cannot be undone.',
+                style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 13, height: 1.5),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                keyboardAppearance: Brightness.dark,
+                autocorrect: false,
+                onChanged: (_) => setSt(() {}),
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: 'Type DELETE to confirm',
+                  hintStyle: const TextStyle(color: Color(0xFF555566)),
+                  filled: true,
+                  fillColor: const Color(0xFF0E0E1C),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0x22FFFFFF)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE53935), width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE53935),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFF4A1515),
+                  disabledForegroundColor: const Color(0xFF884444),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                onPressed: (ctrl.text.trim() == 'DELETE' && !deleting)
+                    ? () async {
+                        setSt(() => deleting = true);
+                        try {
+                          await AuthService.deleteAccount();
+                        } catch (_) {
+                          if (ctx.mounted) {
+                            Navigator.pop(ctx);
+                            _showSnack('Failed to delete account. Please try again.');
+                          }
+                        }
+                      }
+                    : null,
+                child: deleting
+                    ? const SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Permanently Delete Account',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel', style: TextStyle(color: Color(0xFFAAAAAA))),
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 

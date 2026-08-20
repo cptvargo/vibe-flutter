@@ -6,7 +6,7 @@ import '../api/jellyfin_models.dart';
 class RecentlyPlayedService {
   static const _key        = 'vibe_recently_played';
   static const _aiKey      = 'vibe_ai_recently_played';
-  static const _migratedKey = 'vibe_rp_migrated_v3'; // bump to force re-clear
+  static const _migratedKey = 'vibe_rp_migrated_v4'; // bump to force re-clear
   static const _maxTracks  = 30;
 
   static final _notifier = _RecentlyPlayedNotifier();
