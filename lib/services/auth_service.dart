@@ -61,15 +61,11 @@ class AuthService {
     await supabase.from('profiles').update(data).eq('id', user!.id);
   }
 
-  // Validate an invite code (does not consume it — call consumeInviteCode after account creation)
+  // Validate an invite code via SECURITY DEFINER function — avoids exposing the raw table
   static Future<Map<String, dynamic>?> redeemInviteCode(String code) async {
-    final res = await supabase
-        .from('invite_codes')
-        .select('*, servers(*)')
-        .eq('code', code.toUpperCase())
-        .gt('uses_remaining', 0)
-        .maybeSingle();
-    return res;
+    final res = await supabase.rpc('validate_invite_code', params: {'p_code': code});
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
   }
 
   // Sign up via invite code: creates account, stores server_url, decrements code usage
