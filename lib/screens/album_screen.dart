@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
+import '../services/download_service.dart';
 import '../theme/palette_service.dart';
 import '../theme/vibe_theme.dart';
 import '../widgets/mini_player.dart';
@@ -218,6 +219,50 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                               ),
                             ),
                             const SizedBox(width: 12),
+                            // Download button
+                            if (_tracks.isNotEmpty)
+                              StreamBuilder<void>(
+                                stream: DownloadService.onChange,
+                                builder: (_, __) {
+                                  final allDone = _tracks.every(
+                                      (t) => DownloadService.isDownloaded(t.id));
+                                  final anyActive = _tracks.any(
+                                      (t) => DownloadService.isDownloading(t.id));
+                                  if (allDone) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: Icon(Icons.offline_pin,
+                                          color: theme.accentBright, size: 30),
+                                    );
+                                  }
+                                  if (anyActive) {
+                                    final active = _tracks
+                                        .where((t) => DownloadService.isDownloading(t.id));
+                                    final avg = active.fold(0.0,
+                                            (s, t) => s + DownloadService.progress(t.id)) /
+                                        active.length;
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: SizedBox(
+                                        width: 30, height: 30,
+                                        child: CircularProgressIndicator(
+                                          value: avg,
+                                          strokeWidth: 2.5,
+                                          color: theme.accentBright,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return GestureDetector(
+                                    onTap: () => DownloadService.downloadTracks(_tracks),
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: Icon(Icons.download_for_offline_outlined,
+                                          color: theme.textDim, size: 30),
+                                    ),
+                                  );
+                                },
+                              ),
                             // Play all
                             GestureDetector(
                               onTap: () => _play(0),

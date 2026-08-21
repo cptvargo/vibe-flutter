@@ -29,6 +29,7 @@ dependencies:
   # ── HTTP + data ──────────────────────────────────────────────────────────────
   http: ^1.2.2
   shared_preferences: ^2.3.3
+  path_provider: ^2.1.0
 
   # ── Supabase (auth, profiles, invite codes) ─────────────────────────────────
   supabase_flutter: ^2.8.4

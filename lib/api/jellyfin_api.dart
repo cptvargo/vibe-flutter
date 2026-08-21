@@ -44,6 +44,10 @@ class JellyfinApi {
   static String streamUrl(String itemId) =>
       '$_base/Audio/$itemId/stream?static=true&api_key=$_key&UserId=$_user&Container=m4a,mp3,flac,wav,aac';
 
+  // Direct file download — skips the stream pipeline, serves original bytes.
+  static String downloadUrl(String itemId) =>
+      '$_base/Items/$itemId/Download?api_key=$_key&UserId=$_user';
+
   // ── Library queries ────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> getRecentlyPlayed({int limit = 20}) =>
