@@ -3,11 +3,14 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'audio/audio_handler.dart';
 import 'config/vibe_config.dart';
 import 'navigation/router.dart';
 import 'theme/palette_service.dart';
+import 'services/download_service.dart';
+import 'services/offline_playlist_service.dart';
 import 'services/recently_played_service.dart';
 import 'services/last_played_service.dart';
 import 'providers.dart';
@@ -35,6 +38,9 @@ Future<void> main() async {
     publishableKey: VibeConfig.supabaseAnon,
   );
 
+  await Hive.initFlutter();
+  await DownloadService.init();
+  await OfflinePlaylistService.init();
   await PaletteService.init();
   await RecentlyPlayedService.init();
 

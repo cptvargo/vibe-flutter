@@ -8,6 +8,7 @@ const _kTabs = [
   (id: 'home',     label: 'Home',     icon: Icons.home_outlined,           activeIcon: Icons.home),
   (id: 'search',   label: 'Search',   icon: Icons.search_outlined,         activeIcon: Icons.search),
   (id: 'library',  label: 'Library',  icon: Icons.library_music_outlined,  activeIcon: Icons.library_music),
+  (id: 'offline',  label: 'Offline',  icon: Icons.offline_pin_outlined,    activeIcon: Icons.offline_pin),
   (id: 'settings', label: 'Settings', icon: Icons.person_outline,          activeIcon: Icons.person),
 ];
 

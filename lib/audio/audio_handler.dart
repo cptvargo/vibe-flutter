@@ -139,7 +139,16 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ── Primary player state → audio_service playbackState ───────────────────
   void _onPrimaryState(PlayerState state) {
-    if (_loading) return;
+    if (_loading) {
+      // Stay suppressed until the new track actually starts playing.
+      // This prevents the play button from flashing to "play" during the
+      // stop→setAudioSource→play gap in _hardSkipTo / playTracks.
+      if (state.playing) {
+        _loading = false; // first playing:true → resume forwarding
+      } else {
+        return;
+      }
+    }
 
     playbackState.add(playbackState.value.copyWith(
       controls: [
@@ -362,13 +371,13 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
     final url = item.extras?['url'] as String? ?? '';
     try {
+      await _primary.stop();
       await _primary.setVolume(1.0);
       await _primary.setAudioSource(
           AudioSource.uri(Uri.parse(url), tag: item));
-      _loading = false;
       _reportStarted(item.id);
       queue.add(List.unmodifiable(_queue));
-      _primary.play();
+      _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
     } catch (_) {
       _loading = false;
     }
@@ -404,9 +413,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     await _primary.setVolume(1.0);
     await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
 
-    _loading = false;
     _reportStarted(item.id);
-    _primary.play();
+    _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
   }
 
   Future<void> addToQueue(VibeTrack track) async {
@@ -437,14 +445,13 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       try {
         await _primary.setVolume(1.0);
         await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
-        _loading = false;
         _reportStarted(item.id);
       } catch (_) {
         _loading = false;
         return;
       }
     }
-    return _primary.play();
+    return _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
   }
 
   @override Future<void> pause() => _primary.pause();
@@ -460,6 +467,10 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToNext() async {
+    if (_crossfading) {
+      await _hardSkipTo(_queueIdx);
+      return;
+    }
     final next = _nextIndex;
     if (next == null) return;
     await _hardSkipTo(next);

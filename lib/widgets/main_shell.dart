@@ -3,6 +3,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
+import '../screens/downloads_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/library_screen.dart';
 import '../screens/search_screen.dart';
@@ -95,6 +96,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       case 'home':    return const HomeScreen();
       case 'search':  return const SearchScreen();
       case 'library': return const LibraryScreen();
+      case 'offline': return const DownloadsScreen();
       case 'settings': return const SettingsScreen();
       default:         return const HomeScreen();
     }
