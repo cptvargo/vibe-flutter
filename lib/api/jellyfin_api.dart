@@ -262,6 +262,57 @@ class JellyfinApi {
     }
   }
 
+  // ── Playlists ──────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getPlaylists() =>
+      _get('/Users/$_user/Items?IncludeItemTypes=Playlist&Recursive=true'
+          '&Fields=PrimaryImageAspectRatio,ChildCount,ImageTags'
+          '&SortBy=SortName&SortOrder=Ascending');
+
+  static Future<Map<String, dynamic>> createPlaylist(String name) async {
+    final res = await http.post(
+      Uri.parse('$_base/Playlists'),
+      headers: _headers,
+      body: json.encode({'Name': name, 'UserId': _user, 'MediaType': 'Audio'}),
+    );
+    if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+    return json.decode(res.body) as Map<String, dynamic>;
+  }
+
+  static Future<void> deletePlaylist(String playlistId) async {
+    await http.delete(Uri.parse('$_base/Items/$playlistId'), headers: _headers);
+  }
+
+  static Future<Map<String, dynamic>> getPlaylistItems(String playlistId) =>
+      _get('/Playlists/$playlistId/Items?UserId=$_user'
+          '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId,ImageTags'
+          '&Limit=500');
+
+  static Future<void> addToPlaylist(String playlistId, List<String> itemIds) async {
+    final ids = itemIds.join(',');
+    final res = await http.post(
+      Uri.parse('$_base/Playlists/$playlistId/Items?Ids=$ids&UserId=$_user'),
+      headers: _headers,
+    );
+    if (res.statusCode >= 400) throw Exception('HTTP ${res.statusCode}');
+  }
+
+  static Future<void> removeFromPlaylist(String playlistId, List<String> entryIds) async {
+    final ids = entryIds.join(',');
+    await http.delete(
+      Uri.parse('$_base/Playlists/$playlistId/Items?EntryIds=$ids'),
+      headers: _headers,
+    );
+  }
+
+  static Future<List<Map<String, dynamic>>> searchTracks(String query, {int limit = 30}) async {
+    final q = Uri.encodeComponent(query);
+    final res = await _get('/Users/$_user/Items?SearchTerm=$q&ParentId=$_lib'
+        '&IncludeItemTypes=Audio&Limit=$limit&Recursive=true'
+        '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId,ImageTags');
+    return (res['Items'] as List).cast<Map<String, dynamic>>();
+  }
+
   // ── Search ─────────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> search(String query, {int limit = 40}) async {
