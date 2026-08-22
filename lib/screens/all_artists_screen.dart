@@ -34,26 +34,24 @@ class _AllArtistsScreenState extends ConsumerState<AllArtistsScreen> {
 
   Future<void> _load() async {
     try {
-      final res = await JellyfinApi.getArtists(limit: 500);
+      final results = await Future.wait([
+        JellyfinApi.getArtists(limit: 500),
+        JellyfinApi.getAIArtists(limit: 200),
+      ]);
       if (!mounted) return;
-      final aiRes = await JellyfinApi.getAIArtists(limit: 200);
-      if (!mounted) return;
-      final aiIds = ((aiRes['Items'] as List?) ?? [])
-          .cast<Map<String, dynamic>>()
-          .map((a) => a['Id'] as String? ?? '')
-          .toSet();
       final seen = <String>{};
-      final artists = ((res['Items'] as List?) ?? [])
-          .cast<Map<String, dynamic>>()
-          .where((a) {
-            final id   = a['Id']   as String? ?? '';
-            final name = (a['Name'] as String? ?? '').trim();
-            if (aiIds.contains(id))         return false;
-            if (name.isEmpty)               return false;
-            return seen.add(name.toLowerCase());
-          })
-          .toList();
-      setState(() { _artists = artists; _loading = false; });
+      final all = [
+        ...((results[0]['Items'] as List?) ?? []).cast<Map<String, dynamic>>(),
+        ...((results[1]['Items'] as List?) ?? []).cast<Map<String, dynamic>>(),
+      ].where((a) {
+        final name = (a['Name'] as String? ?? '').trim();
+        if (name.isEmpty) return false;
+        return seen.add(name.toLowerCase());
+      }).toList()
+        ..sort((a, b) => (a['Name'] as String? ?? '')
+            .toLowerCase()
+            .compareTo((b['Name'] as String? ?? '').toLowerCase()));
+      setState(() { _artists = all; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }

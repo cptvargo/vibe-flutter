@@ -18,7 +18,7 @@ const _kStations = <VibeStation>[
   (id: 'vibe_radio', label: 'ViBE Radio',     icon: Icons.radio,       sub: 'Your full library'),
   (id: 'artist_mix', label: 'Artist Mix',     icon: Icons.mic_none,    sub: 'Based on now playing'),
   (id: 'album_mix',  label: 'Album Mix',      icon: Icons.album,       sub: 'Based on now playing'),
-  (id: 'top_month',  label: 'Top This Month', icon: Icons.trending_up, sub: 'Your most played'),
+  (id: 'top_month',  label: 'Most Played',    icon: Icons.trending_up, sub: 'Your most played'),
 ];
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -72,13 +72,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         JellyfinApi.getRecentAlbums(),
         JellyfinApi.getTopAlbums(),
         JellyfinApi.getArtists(),
+        JellyfinApi.getAIArtists(),
       ]);
       if (!mounted) return;
 
       final seen = <String>{};
-      final artists = (results[2]['Items'] as List? ?? [])
-          .cast<Map<String, dynamic>>()
-          .where((a) {
+      final artists = [
+        ...(results[2]['Items'] as List? ?? []).cast<Map<String, dynamic>>(),
+        ...(results[3]['Items'] as List? ?? []).cast<Map<String, dynamic>>(),
+      ].where((a) {
             final name = (a['Name'] as String? ?? '').trim();
             if (name.isEmpty || name.contains(',')) return false;
             return seen.add(name.toLowerCase());
