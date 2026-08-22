@@ -330,10 +330,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         itemCount: _recentAlbums.take(10).length,
                         separatorBuilder: (_, _) => const SizedBox(width: 14),
-                        itemBuilder: (_, i) => VibeAlbumCard(
-                          item: _recentAlbums[i], theme: theme,
-                          onPress: () => _playAlbum(_recentAlbums[i]),
-                        ),
+                        itemBuilder: (_, i) {
+                          final a      = _recentAlbums[i];
+                          final id     = a['Id']              as String? ?? '';
+                          final name   = a['Name']            as String? ?? '';
+                          final artist = a['AlbumArtist']     as String? ?? '';
+                          final year   = a['ProductionYear']  as int?;
+                          final yParam = year != null ? '&year=$year' : '';
+                          return VibeAlbumCard(
+                            item: a, theme: theme,
+                            onPress: () => context.push(
+                              '/album/$id?name=${Uri.encodeComponent(name)}&artist=${Uri.encodeComponent(artist)}$yParam',
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),

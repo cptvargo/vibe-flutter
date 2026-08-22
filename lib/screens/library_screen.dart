@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../providers.dart';
 import '../theme/vibe_theme.dart';
+import 'playlists_tab.dart';
 
 // Layout constants — kept consistent between render and offset math
 const _kColumns     = 3;
@@ -25,6 +26,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+  int    _tab       = 0; // 0 = Albums, 1 = Playlists
   List<Map<String, dynamic>> _albums = [];
   bool _loading = true;
   final _scrollCtrl = ScrollController();
@@ -74,6 +76,31 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final theme   = ref.watch(themeProvider);
     final screenW = MediaQuery.of(context).size.width;
 
+    return Column(
+      children: [
+        // ── Tab toggle ──────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          child: Row(
+            children: [
+              _TabPill(label: 'Albums',    active: _tab == 0,
+                  theme: theme, onTap: () => setState(() => _tab = 0)),
+              const SizedBox(width: 8),
+              _TabPill(label: 'Playlists', active: _tab == 1,
+                  theme: theme, onTap: () => setState(() => _tab = 1)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _tab == 1
+              ? PlaylistsTab(theme: theme)
+              : _buildAlbumGrid(theme, screenW),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAlbumGrid(VibeTheme theme, double screenW) {
     if (_loading) {
       return Center(child: CircularProgressIndicator(color: theme.accentBright));
     }
@@ -232,6 +259,44 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ),
           ),
       ],
+    );
+  }
+}
+
+// ── Tab pill toggle ─────────────────────────────────────────────────────────
+class _TabPill extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VibeTheme theme;
+  final VoidCallback onTap;
+
+  const _TabPill({
+    required this.label,
+    required this.active,
+    required this.theme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? theme.accent : theme.surface,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? Colors.white : theme.textDim,
+            fontSize: 13,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
     );
   }
 }
