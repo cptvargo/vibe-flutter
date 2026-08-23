@@ -146,17 +146,6 @@ class _LoginScreenState extends State<LoginScreen>
         return;
       }
     }
-    if (_mode == _Mode.join && _codeValid) {
-      if (_jellyfinUserCtrl.text.trim().isEmpty) {
-        _setError('Please enter your Jellyfin username.');
-        return;
-      }
-      if (_jellyfinPassCtrl.text.isEmpty) {
-        _setError('Please enter your Jellyfin password.');
-        return;
-      }
-    }
-
     setState(() { _loading = true; _error = null; });
 
     try {
@@ -209,48 +198,15 @@ class _LoginScreenState extends State<LoginScreen>
       }
 
       if (_mode == _Mode.join) {
-        final server    = _validatedInvite!['servers'] as Map<String, dynamic>?;
-        final serverUrl = (server?['server_url'] as String?) ?? '';
-
-        // Authenticate with the server's Jellyfin instance
-        String jellyfinToken  = '';
-        String jellyfinUserId = '';
-        if (serverUrl.isNotEmpty) {
-          final creds = await AuthService.authenticateJellyfin(
-            serverUrl: serverUrl,
-            username:  _jellyfinUserCtrl.text.trim(),
-            password:  _jellyfinPassCtrl.text,
-          );
-          if (creds == null) {
-            if (mounted) {
-              _setError('Could not authenticate with the server Jellyfin. '
-                  'Check your username and password.');
-            }
-            return;
-          }
-          jellyfinToken  = creds.token;
-          jellyfinUserId = creds.userId;
-        }
-
         final res = await AuthService.signUpWithInviteCode(
-          email:          email,
-          password:       password,
-          displayName:    name,
-          inviteData:     _validatedInvite!,
-          jellyfinToken:  jellyfinToken,
-          jellyfinUserId: jellyfinUserId,
+          email:       email,
+          password:    password,
+          displayName: name,
+          inviteData:  _validatedInvite!,
         );
         if (res.user == null && mounted) {
           _setError('Could not create account. Try again.');
           return;
-        }
-
-        if (serverUrl.isNotEmpty && jellyfinToken.isNotEmpty) {
-          await JellyfinConfig.save(
-            serverUrl: serverUrl,
-            apiKey:    jellyfinToken,
-            userId:    jellyfinUserId,
-          );
         }
       }
     } on Exception catch (e) {
@@ -435,35 +391,11 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           if (_codeValid) ...[
             const SizedBox(height: 20),
-            // Jellyfin server credentials section
-            _SectionLabel(
-              icon: Icons.dns_outlined,
-              label: _jellyfinServerLabel(_validatedInvite),
-            ),
-            const SizedBox(height: 12),
-            _Field(
-              controller: _jellyfinUserCtrl,
-              label: 'Jellyfin Username',
-              hint: 'Your account on this server',
-            ),
-            const SizedBox(height: 12),
-            _Field(
-              controller: _jellyfinPassCtrl,
-              label: 'Jellyfin Password',
-              obscure: _jellyfinObscure,
-              suffix: _ObscureToggle(
-                obscure: _jellyfinObscure,
-                onTap: () => setState(() => _jellyfinObscure = !_jellyfinObscure),
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionLabel(icon: Icons.person_outline, label: 'Your ViBE account'),
-            const SizedBox(height: 12),
             _Field(controller: _nameCtrl,     label: 'Your name'),
             const SizedBox(height: 12),
             _Field(controller: _emailCtrl,    label: 'Email',    keyboard: TextInputType.emailAddress),
             const SizedBox(height: 12),
-            _Field(controller: _passwordCtrl, label: 'ViBE Password', obscure: _obscure,
+            _Field(controller: _passwordCtrl, label: 'Password', obscure: _obscure,
               suffix: _ObscureToggle(obscure: _obscure, onTap: () => setState(() => _obscure = !_obscure)),
             ),
           ],
@@ -514,18 +446,6 @@ class _LoginScreenState extends State<LoginScreen>
           ),
         ];
     }
-  }
-
-  String _jellyfinServerLabel(Map<String, dynamic>? invite) {
-    final server = invite?['servers'] as Map<String, dynamic>?;
-    final name   = server?['server_name'] as String?;
-    final url    = server?['server_url']  as String?;
-    if (name != null && name.isNotEmpty) return 'Server: $name';
-    if (url  != null && url.isNotEmpty)  {
-      final host = Uri.tryParse(url)?.host ?? url;
-      return 'Server: $host';
-    }
-    return 'Jellyfin server';
   }
 
   Widget _buildSubmitButton() {

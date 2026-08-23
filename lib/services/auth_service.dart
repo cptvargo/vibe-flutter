@@ -70,14 +70,13 @@ class AuthService {
     return Map<String, dynamic>.from(res as Map);
   }
 
-  // Sign up via invite code: creates account, stores server credentials
+  // Sign up via invite code: creates ViBE account linked to the inviting server.
+  // No Jellyfin credentials needed — the server handles auth transparently.
   static Future<AuthResponse> signUpWithInviteCode({
     required String email,
     required String password,
     required String displayName,
     required Map<String, dynamic> inviteData,
-    required String jellyfinToken,
-    required String jellyfinUserId,
   }) async {
     final server    = inviteData['servers'] as Map<String, dynamic>?;
     final serverUrl = (server?['server_url'] as String?) ?? VibeConfig.serverUrl;
@@ -87,11 +86,8 @@ class AuthService {
       email:    email,
       password: password,
       data: {
-        'display_name':        displayName,
-        'server_url':          serverUrl,
-        'jellyfin_token':      jellyfinToken,
-        'jellyfin_user_id':    jellyfinUserId,
-        'jellyfin_server_url': serverUrl,
+        'display_name': displayName,
+        'server_url':   serverUrl,
       },
     );
 
