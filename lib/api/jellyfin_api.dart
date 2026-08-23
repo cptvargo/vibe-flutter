@@ -1,15 +1,25 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../config/vibe_config.dart';
+import '../config/jellyfin_config.dart';
 
-// Jellyfin API service — translated from jellyfin.js
+// Thrown when Jellyfin returns 401 — token expired or revoked.
+class JellyfinAuthException implements Exception {
+  const JellyfinAuthException();
+}
+
+// Jellyfin API service — all credentials come from JellyfinConfig at runtime.
+// No hardcoded values: each user authenticates against their own server.
 class JellyfinApi {
-  static const _lib   = VibeConfig.vibeLibrary;
-  static const _aiLib = VibeConfig.aiLibrary;
-  static const _user = VibeConfig.userId;
-  static const _key  = VibeConfig.apiKey;
+  static String get _base => JellyfinConfig.serverUrl;
+  static String get _key  => JellyfinConfig.apiKey;
+  static String get _user => JellyfinConfig.userId;
 
-  static String get _base => VibeConfig.serverUrl;
+  // Library-scoped query fragments — empty for own-server users (no filtering needed)
+  static String get _lp   => JellyfinConfig.libParam;    // e.g. '&ParentId=xxx' or ''
+  static String get _alp  => JellyfinConfig.aiLibParam;
+
+  // Direct field references (for endpoints that need the raw ID)
+  static String get _aiLib => JellyfinConfig.aiLib;
 
   static Map<String, String> get _headers => {
     'Content-Type':  'application/json',
@@ -21,9 +31,8 @@ class JellyfinApi {
 
   static Future<Map<String, dynamic>> _get(String path) async {
     final res = await http.get(Uri.parse('$_base$path'), headers: _headers);
+    if (res.statusCode == 401) throw const JellyfinAuthException();
     if (res.statusCode != 200) {
-      // Include a snippet of the body — Cloudflare embeds a 1XXX sub-error
-      // code in the HTML body that narrows down why the 530 was returned.
       final snippet = res.body.length > 200 ? res.body.substring(0, 200) : res.body;
       throw Exception('HTTP ${res.statusCode}${ snippet.isNotEmpty ? '\n$snippet' : ''}');
     }
@@ -37,35 +46,35 @@ class JellyfinApi {
     return tag != null ? '$base&tag=$tag' : base;
   }
 
-  // 32px thumbnail used only for color extraction — ~2KB download
   static String colorExtractionUrl(String itemId) =>
       '$_base/Items/$itemId/Images/Primary?fillHeight=32&fillWidth=32&quality=50&api_key=$_key';
 
   static String streamUrl(String itemId) =>
       '$_base/Audio/$itemId/stream?static=true&api_key=$_key&UserId=$_user&Container=m4a,mp3,flac,wav,aac';
 
-  // Direct file download — skips the stream pipeline, serves original bytes.
   static String downloadUrl(String itemId) =>
       '$_base/Items/$itemId/Download?api_key=$_key&UserId=$_user';
 
   // ── Library queries ────────────────────────────────────────────────────────
+  // ParentId is appended only when a library ID is configured. Own-server
+  // users have no library filter — their server is entirely theirs.
 
   static Future<Map<String, dynamic>> getRecentlyPlayed({int limit = 20}) =>
-      _get('/Users/$_user/Items?ParentId=$_lib&SortBy=DatePlayed&SortOrder=Descending'
+      _get('/Users/$_user/Items?SortBy=DatePlayed&SortOrder=Descending'
           '&IncludeItemTypes=Audio&Limit=$limit&Recursive=true'
-          '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds&IsPlayed=true&Filters=IsPlayed');
+          '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds&IsPlayed=true&Filters=IsPlayed$_lp');
 
   static Future<Map<String, dynamic>> getRecentAlbums({int limit = 20}) =>
-      _get('/Users/$_user/Items?ParentId=$_lib&SortBy=DateCreated&SortOrder=Descending'
-          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio');
+      _get('/Users/$_user/Items?SortBy=DateCreated&SortOrder=Descending'
+          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio$_lp');
 
   static Future<Map<String, dynamic>> getTopAlbums({int limit = 20}) =>
-      _get('/Users/$_user/Items?ParentId=$_lib&SortBy=PlayCount&SortOrder=Descending'
-          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio');
+      _get('/Users/$_user/Items?SortBy=PlayCount&SortOrder=Descending'
+          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio$_lp');
 
   static Future<Map<String, dynamic>> getAlbums({int limit = 200}) =>
-      _get('/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=MusicAlbum'
-          '&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=SortName');
+      _get('/Users/$_user/Items?IncludeItemTypes=MusicAlbum'
+          '&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=SortName$_lp');
 
   static const _trackFields =
       'PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds,ImageTags';
@@ -74,15 +83,15 @@ class JellyfinApi {
       _get('/Users/$_user/Items?ParentId=$albumId&IncludeItemTypes=Audio'
           '&Fields=$_trackFields,AlbumId&SortBy=IndexNumber');
 
-  static Future<Map<String, dynamic>> getArtists({int limit = 200}) =>
-      _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib&Limit=$limit'
-          '&Fields=PrimaryImageAspectRatio,Overview,ImageTags&SortBy=SortName');
+  static Future<Map<String, dynamic>> getArtists({int limit = 500}) =>
+      _get('/Artists/AlbumArtists?UserId=$_user&Limit=$limit'
+          '&Fields=PrimaryImageAspectRatio,Overview,ImageTags&SortBy=SortName$_lp');
 
   static Future<String?> getArtistIdByName(String name) async {
     try {
       final q   = Uri.encodeComponent(name);
-      final res = await _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib'
-          '&SearchTerm=$q&Limit=1&Fields=PrimaryImageAspectRatio');
+      final res = await _get('/Artists/AlbumArtists?UserId=$_user'
+          '&SearchTerm=$q&Limit=1&Fields=PrimaryImageAspectRatio$_lp');
       final items = (res['Items'] as List?) ?? [];
       if (items.isEmpty) return null;
       return (items.first as Map<String, dynamic>)['Id'] as String?;
@@ -105,46 +114,73 @@ class JellyfinApi {
           '&SortBy=ProductionYear,ParentIndexNumber,IndexNumber&SortOrder=Descending,Ascending,Ascending&Limit=500');
 
   static Future<Map<String, dynamic>> getAllTracks({int limit = 500}) =>
-      _get('/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=Audio'
-          '&Limit=$limit&Recursive=true&Fields=$_trackFields&SortBy=SortName');
+      _get('/Users/$_user/Items?IncludeItemTypes=Audio'
+          '&Limit=$limit&Recursive=true&Fields=$_trackFields&SortBy=SortName$_lp');
 
   static Future<Map<String, dynamic>> getGenres({int limit = 30}) =>
-      _get('/MusicGenres?UserId=$_user&ParentId=$_lib&Limit=$limit&SortBy=SortName');
+      _get('/MusicGenres?UserId=$_user&Limit=$limit&SortBy=SortName$_lp');
 
   static Future<Map<String, dynamic>> getInstantMix(String itemId, {int limit = 50}) =>
       _get('/Items/$itemId/InstantMix?UserId=$_user&Limit=$limit&Fields=$_trackFields');
 
   static Future<Map<String, dynamic>> getTopTracks({int limit = 50}) =>
-      _get('/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=Audio'
+      _get('/Users/$_user/Items?IncludeItemTypes=Audio'
           '&Limit=$limit&Recursive=true&Fields=$_trackFields'
-          '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed');
+          '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed$_lp');
 
   // ── AI library queries ─────────────────────────────────────────────────────
+  // Short-circuit when no AI library is configured (own-server users).
 
-  static Future<Map<String, dynamic>> getAIRecentAlbums({int limit = 20}) =>
-      _get('/Users/$_user/Items?ParentId=$_aiLib&SortBy=DateCreated&SortOrder=Descending'
-          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio');
+  static Future<Map<String, dynamic>> getAIRecentAlbums({int limit = 20}) {
+    if (!JellyfinConfig.hasAiLib) return Future.value(_emptyList());
+    return _get('/Users/$_user/Items?SortBy=DateCreated&SortOrder=Descending'
+        '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio$_alp');
+  }
 
-  static Future<Map<String, dynamic>> getAITopAlbums({int limit = 20}) =>
-      _get('/Users/$_user/Items?ParentId=$_aiLib&SortBy=PlayCount&SortOrder=Descending'
-          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio');
+  static Future<Map<String, dynamic>> getAITopAlbums({int limit = 20}) {
+    if (!JellyfinConfig.hasAiLib) return Future.value(_emptyList());
+    return _get('/Users/$_user/Items?SortBy=PlayCount&SortOrder=Descending'
+        '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio$_alp');
+  }
 
-  static Future<Map<String, dynamic>> getAIArtists({int limit = 200}) =>
-      _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_aiLib&Limit=$limit'
-          '&Fields=PrimaryImageAspectRatio,Overview,ImageTags&SortBy=SortName');
+  static Future<Map<String, dynamic>> getAIArtists({int limit = 200}) {
+    if (!JellyfinConfig.hasAiLib) return Future.value(_emptyList());
+    return _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_aiLib&Limit=$limit'
+        '&Fields=PrimaryImageAspectRatio,Overview,ImageTags&SortBy=SortName');
+  }
 
-  static Future<Map<String, dynamic>> getAIAllTracks({int limit = 500}) =>
-      _get('/Users/$_user/Items?ParentId=$_aiLib&IncludeItemTypes=Audio'
-          '&Limit=$limit&Recursive=true&Fields=$_trackFields&SortBy=SortName');
+  static Future<Map<String, dynamic>> getAIAllTracks({int limit = 500}) {
+    if (!JellyfinConfig.hasAiLib) return Future.value(_emptyList());
+    return _get('/Users/$_user/Items?IncludeItemTypes=Audio'
+        '&Limit=$limit&Recursive=true&Fields=$_trackFields&SortBy=SortName$_alp');
+  }
 
-  static Future<Map<String, dynamic>> getAITopTracks({int limit = 50}) =>
-      _get('/Users/$_user/Items?ParentId=$_aiLib&IncludeItemTypes=Audio'
-          '&Limit=$limit&Recursive=true&Fields=$_trackFields'
-          '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed');
+  static Future<Map<String, dynamic>> getAITopTracks({int limit = 50}) {
+    if (!JellyfinConfig.hasAiLib) return Future.value(_emptyList());
+    return _get('/Users/$_user/Items?IncludeItemTypes=Audio'
+        '&Limit=$limit&Recursive=true&Fields=$_trackFields'
+        '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed$_alp');
+  }
 
-  // Genre buckets — Jellyfin's Genres filter does substring matching, so
-  // "Contemporary Christian" also returns "Christian Hip-Hop" albums.
-  // We fetch all albums once and do exact bucket matching client-side.
+  static Future<String?> getAIArtistIdByName(String name) async {
+    if (!JellyfinConfig.hasAiLib) return null;
+    try {
+      final q   = Uri.encodeComponent(name);
+      final res = await _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_aiLib'
+          '&SearchTerm=$q&Limit=1&Fields=PrimaryImageAspectRatio');
+      final items = (res['Items'] as List?) ?? [];
+      if (items.isEmpty) return null;
+      return (items.first as Map<String, dynamic>)['Id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Map<String, dynamic> _emptyList() =>
+      {'Items': <dynamic>[], 'TotalRecordCount': 0};
+
+  // ── Genre similarity ───────────────────────────────────────────────────────
+
   static const _hipHopGenres = {
     'christian hip-hop', 'hip-hop', 'rap', 'christian rap',
     'hip-hop/rap', 'christian/rap', 'trap',
@@ -159,21 +195,14 @@ class JellyfinApi {
       String artistId, {String? albumId, String? artistName, int limit = 8}) async {
     try {
       final excludeName = (artistName ?? '').toLowerCase().trim();
-
-      // One call — fetch all albums with genres + album artist info.
-      // Note: Jellyfin returns AlbumArtists [{Name,Id}] not AlbumArtistIds.
       final res = await _get(
-          '/Users/$_user/Items?ParentId=$_lib&IncludeItemTypes=MusicAlbum'
-          '&Recursive=true&Fields=Genres,AlbumArtist,AlbumArtists&Limit=500');
+          '/Users/$_user/Items?IncludeItemTypes=MusicAlbum'
+          '&Recursive=true&Fields=Genres,AlbumArtist,AlbumArtists&Limit=500$_lp');
       final albums = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
 
-      // Build albumArtistId → {specific genres} map (skip generic catch-alls).
-      // Also build a reverse map: albumId → albumArtistId so we can resolve the
-      // correct artist ID even when the track's ArtistItems ID differs from the
-      // album's AlbumArtistIds (a common Jellyfin inconsistency).
       final artistGenres  = <String, Set<String>>{};
       final artistNames   = <String, String>{};
-      final albumToArtist = <String, String>{}; // albumId → albumArtistId
+      final albumToArtist = <String, String>{};
       for (final album in albums) {
         final artists = (album['AlbumArtists'] as List?)?.cast<Map<String, dynamic>>();
         final aId    = artists?.firstOrNull?['Id'] as String? ?? '';
@@ -190,8 +219,6 @@ class JellyfinApi {
         if (albId.isNotEmpty) albumToArtist[albId] = aId;
       }
 
-      // Resolve the current artist: prefer albumId lookup (more reliable),
-      // fall back to the track-supplied artistId.
       final resolvedId    = (albumId != null ? albumToArtist[albumId] : null) ?? artistId;
       final currentGenres = artistGenres[resolvedId] ?? {};
       Set<String> bucket;
@@ -200,14 +227,12 @@ class JellyfinApi {
       } else if (currentGenres.any(_worshipGenres.contains)) {
         bucket = _worshipGenres;
       } else {
-        // Unknown or no specific genre — fall back to random.
         return _randomOtherArtists(artistId, excludeName: excludeName, limit: limit);
       }
 
-      // Collect artists in the same bucket, shuffled, excluding self.
       final candidates = artistGenres.entries.toList()..shuffle();
       final result     = <Map<String, dynamic>>[];
-      final seenIds    = <String>{resolvedId, artistId}; // exclude both IDs for same artist
+      final seenIds    = <String>{resolvedId, artistId};
       final seenNames  = <String>{};
 
       for (final entry in candidates) {
@@ -233,8 +258,8 @@ class JellyfinApi {
   static Future<List<Map<String, dynamic>>> _randomOtherArtists(
       String excludeId, {String excludeName = '', int limit = 8}) async {
     try {
-      final res = await _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib'
-          '&Limit=200&Fields=ImageTags&SortBy=SortName');
+      final res = await _get('/Artists/AlbumArtists?UserId=$_user'
+          '&Limit=200&Fields=ImageTags&SortBy=SortName$_lp');
       final all = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       final filtered = all.where((a) {
         final id  = a['Id']   as String? ?? '';
@@ -246,19 +271,6 @@ class JellyfinApi {
       return filtered.take(limit).toList();
     } catch (_) {
       return [];
-    }
-  }
-
-  static Future<String?> getAIArtistIdByName(String name) async {
-    try {
-      final q   = Uri.encodeComponent(name);
-      final res = await _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_aiLib'
-          '&SearchTerm=$q&Limit=1&Fields=PrimaryImageAspectRatio');
-      final items = (res['Items'] as List?) ?? [];
-      if (items.isEmpty) return null;
-      return (items.first as Map<String, dynamic>)['Id'] as String?;
-    } catch (_) {
-      return null;
     }
   }
 
@@ -306,10 +318,10 @@ class JellyfinApi {
   }
 
   static Future<List<Map<String, dynamic>>> searchTracks(String query, {int limit = 30}) async {
-    final q = Uri.encodeComponent(query);
-    final res = await _get('/Users/$_user/Items?SearchTerm=$q&ParentId=$_lib'
+    final q   = Uri.encodeComponent(query);
+    final res = await _get('/Users/$_user/Items?SearchTerm=$q'
         '&IncludeItemTypes=Audio&Limit=$limit&Recursive=true'
-        '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId,ImageTags');
+        '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId,ImageTags$_lp');
     return (res['Items'] as List).cast<Map<String, dynamic>>();
   }
 
@@ -318,11 +330,11 @@ class JellyfinApi {
   static Future<Map<String, dynamic>> search(String query, {int limit = 40}) async {
     final q = Uri.encodeComponent(query);
     final results = await Future.wait([
-      _get('/Users/$_user/Items?SearchTerm=$q&ParentId=$_lib'
+      _get('/Users/$_user/Items?SearchTerm=$q'
           '&IncludeItemTypes=Audio,MusicAlbum&Limit=$limit&Recursive=true'
-          '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId'),
-      _get('/Artists/AlbumArtists?UserId=$_user&ParentId=$_lib&SearchTerm=$q'
-          '&Limit=10&Fields=PrimaryImageAspectRatio,ImageTags'),
+          '&Fields=PrimaryImageAspectRatio,AudioInfo,ParentId$_lp'),
+      _get('/Artists/AlbumArtists?UserId=$_user&SearchTerm=$q'
+          '&Limit=10&Fields=PrimaryImageAspectRatio,ImageTags$_lp'),
     ]);
     final artists = (results[1]['Items'] as List)
         .map((a) => {...(a as Map<String, dynamic>), 'Type': 'MusicArtist'})
@@ -361,5 +373,36 @@ class JellyfinApi {
         body: json.encode({'ItemId': itemId, 'PositionTicks': positionTicks}),
       );
     } catch (_) {}
+  }
+
+  // ── Jellyfin authentication ────────────────────────────────────────────────
+  // Used during "Own Server" and "Join ViBE" signup to get an access token.
+
+  static Future<({String token, String userId})?> authenticateByName({
+    required String serverUrl,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      final base = serverUrl.replaceAll(RegExp(r'/$'), '');
+      final res  = await http.post(
+        Uri.parse('$base/Users/AuthenticateByName'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Emby-Authorization':
+              'MediaBrowser Client="Vibe", Device="VibeApp", '
+              'DeviceId="vibe-flutter-001", Version="1.0.0"',
+        },
+        body: json.encode({'Username': username, 'Pw': password}),
+      );
+      if (res.statusCode != 200) return null;
+      final data   = json.decode(res.body) as Map<String, dynamic>;
+      final token  = data['AccessToken'] as String?;
+      final uid    = (data['User'] as Map<String, dynamic>?)?['Id'] as String?;
+      if (token == null || uid == null) return null;
+      return (token: token, userId: uid);
+    } catch (_) {
+      return null;
+    }
   }
 }

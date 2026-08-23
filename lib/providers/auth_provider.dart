@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/jellyfin_config.dart';
 import '../services/auth_service.dart';
 
 // Simple ChangeNotifier that fires whenever Supabase auth state changes.
@@ -11,6 +12,14 @@ class AuthNotifier extends ChangeNotifier {
   AuthNotifier() {
     _sub = supabase.auth.onAuthStateChange.listen((state) {
       _isPasswordRecovery = state.event == AuthChangeEvent.passwordRecovery;
+      if (state.event == AuthChangeEvent.signedIn ||
+          state.event == AuthChangeEvent.tokenRefreshed) {
+        // Load Jellyfin credentials from Hive → Supabase metadata.
+        // Non-blocking: the home screen will retry on any API error.
+        JellyfinConfig.load();
+      } else if (state.event == AuthChangeEvent.signedOut) {
+        JellyfinConfig.clear();
+      }
       notifyListeners();
     });
   }

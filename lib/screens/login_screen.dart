@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../config/jellyfin_config.dart';
 
 // Login screen — three paths:
 //   sign_in      → existing users (email + password)
@@ -9,7 +10,6 @@ import '../services/auth_service.dart';
 
 enum _Mode { signIn, join, ownServer }
 
-// Design constants — intentional branding, not music-content theming
 const _kBg          = Color(0xFF080810);
 const _kSurface     = Color(0xFF12121E);
 const _kBorder      = Color(0x22FFFFFF);
@@ -30,18 +30,19 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   _Mode _mode = _Mode.signIn;
 
-  // Controllers shared across modes — cleared on mode switch
-  final _emailCtrl    = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  final _nameCtrl     = TextEditingController();
-  final _codeCtrl     = TextEditingController();
-  final _serverCtrl   = TextEditingController();
+  final _emailCtrl         = TextEditingController();
+  final _passwordCtrl      = TextEditingController();
+  final _nameCtrl          = TextEditingController();
+  final _codeCtrl          = TextEditingController();
+  final _serverCtrl        = TextEditingController();
+  final _jellyfinUserCtrl  = TextEditingController();
+  final _jellyfinPassCtrl  = TextEditingController();
 
-  bool _loading     = false;
-  bool _obscure     = true;
+  bool _loading         = false;
+  bool _obscure         = true;
+  bool _jellyfinObscure = true;
   String? _error;
 
-  // Invite code validation state
   Map<String, dynamic>? _validatedInvite;
   bool _codeChecking = false;
   bool _codeValid    = false;
@@ -68,6 +69,8 @@ class _LoginScreenState extends State<LoginScreen>
     _nameCtrl.dispose();
     _codeCtrl.dispose();
     _serverCtrl.dispose();
+    _jellyfinUserCtrl.dispose();
+    _jellyfinPassCtrl.dispose();
     super.dispose();
   }
 
@@ -99,8 +102,8 @@ class _LoginScreenState extends State<LoginScreen>
       final data = await AuthService.redeemInviteCode(code);
       if (mounted) {
         setState(() {
-          _codeChecking  = false;
-          _codeValid     = data != null;
+          _codeChecking    = false;
+          _codeValid       = data != null;
           _validatedInvite = data;
           _error = data == null ? 'Invalid or expired invite code.' : null;
         });
@@ -127,9 +130,31 @@ class _LoginScreenState extends State<LoginScreen>
       _setError('Please enter a valid invite code first.');
       return;
     }
-    if (_mode == _Mode.ownServer && _serverCtrl.text.trim().isEmpty) {
-      _setError('Please enter your Jellyfin server URL.');
-      return;
+
+    // Validate Jellyfin fields for server-setup modes
+    if (_mode == _Mode.ownServer) {
+      if (_serverCtrl.text.trim().isEmpty) {
+        _setError('Please enter your Jellyfin server URL.');
+        return;
+      }
+      if (_jellyfinUserCtrl.text.trim().isEmpty) {
+        _setError('Please enter your Jellyfin username.');
+        return;
+      }
+      if (_jellyfinPassCtrl.text.isEmpty) {
+        _setError('Please enter your Jellyfin password.');
+        return;
+      }
+    }
+    if (_mode == _Mode.join && _codeValid) {
+      if (_jellyfinUserCtrl.text.trim().isEmpty) {
+        _setError('Please enter your Jellyfin username.');
+        return;
+      }
+      if (_jellyfinPassCtrl.text.isEmpty) {
+        _setError('Please enter your Jellyfin password.');
+        return;
+      }
     }
 
     setState(() { _loading = true; _error = null; });
@@ -138,23 +163,95 @@ class _LoginScreenState extends State<LoginScreen>
       if (_mode == _Mode.signIn) {
         final res = await AuthService.signIn(email: email, password: password);
         if (res.user == null && mounted) _setError('Sign in failed. Check your credentials.');
-      } else if (_mode == _Mode.join) {
-        final res = await AuthService.signUpWithInviteCode(
-          email:        email,
-          password:     password,
-          displayName:  name,
-          inviteData:   _validatedInvite!,
-        );
-        if (res.user == null && mounted) _setError('Could not create account. Try again.');
-      } else {
+        // JellyfinConfig loads automatically via auth state listener
+        return;
+      }
+
+      if (_mode == _Mode.ownServer) {
         final url = _serverCtrl.text.trim().replaceAll(RegExp(r'/$'), '');
-        final res = await AuthService.signUpWithServer(
-          email:       email,
-          password:    password,
-          displayName: name,
-          serverUrl:   url,
+        setState(() => _error = null);
+
+        // Verify Jellyfin credentials before creating the ViBE account
+        final creds = await AuthService.authenticateJellyfin(
+          serverUrl: url,
+          username:  _jellyfinUserCtrl.text.trim(),
+          password:  _jellyfinPassCtrl.text,
         );
-        if (res.user == null && mounted) _setError('Could not create account. Try again.');
+        if (creds == null) {
+          if (mounted) {
+            _setError('Could not connect to your Jellyfin server. '
+                'Check the URL and credentials.');
+          }
+          return;
+        }
+
+        // Create ViBE account with Jellyfin credentials embedded in metadata
+        final res = await AuthService.signUpWithServer(
+          email:          email,
+          password:       password,
+          displayName:    name,
+          serverUrl:      url,
+          jellyfinToken:  creds.token,
+          jellyfinUserId: creds.userId,
+        );
+        if (res.user == null && mounted) {
+          _setError('Could not create account. Try again.');
+          return;
+        }
+
+        // Configure JellyfinConfig immediately so the app works right away
+        await JellyfinConfig.save(
+          serverUrl: url,
+          apiKey:    creds.token,
+          userId:    creds.userId,
+        );
+        return;
+      }
+
+      if (_mode == _Mode.join) {
+        final server    = _validatedInvite!['servers'] as Map<String, dynamic>?;
+        final serverUrl = (server?['server_url'] as String?) ?? '';
+
+        // Authenticate with the server's Jellyfin instance
+        String jellyfinToken  = '';
+        String jellyfinUserId = '';
+        if (serverUrl.isNotEmpty) {
+          final creds = await AuthService.authenticateJellyfin(
+            serverUrl: serverUrl,
+            username:  _jellyfinUserCtrl.text.trim(),
+            password:  _jellyfinPassCtrl.text,
+          );
+          if (creds == null) {
+            if (mounted) {
+              _setError('Could not authenticate with the server Jellyfin. '
+                  'Check your username and password.');
+            }
+            return;
+          }
+          jellyfinToken  = creds.token;
+          jellyfinUserId = creds.userId;
+        }
+
+        final res = await AuthService.signUpWithInviteCode(
+          email:          email,
+          password:       password,
+          displayName:    name,
+          inviteData:     _validatedInvite!,
+          jellyfinToken:  jellyfinToken,
+          jellyfinUserId: jellyfinUserId,
+        );
+        if (res.user == null && mounted) {
+          _setError('Could not create account. Try again.');
+          return;
+        }
+
+        if (serverUrl.isNotEmpty && jellyfinToken.isNotEmpty) {
+          await JellyfinConfig.save(
+            serverUrl: serverUrl,
+            apiKey:    jellyfinToken,
+            userId:    jellyfinUserId,
+          );
+        }
       }
     } on Exception catch (e) {
       if (mounted) _setError(e.toString().replaceAll(RegExp(r'^Exception: '), ''));
@@ -170,7 +267,6 @@ class _LoginScreenState extends State<LoginScreen>
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // Subtle radial purple glow behind the card
           Positioned(
             top: -120,
             left: -80,
@@ -303,9 +399,9 @@ class _LoginScreenState extends State<LoginScreen>
 
   Widget _buildHeader() {
     final titles = {
-      _Mode.signIn:    ('Welcome back', 'Sign in to your account'),
-      _Mode.join:      ('Join ViBE',    'Enter your invite code to get started'),
-      _Mode.ownServer: ('Connect Server', 'Use your own Jellyfin server'),
+      _Mode.signIn:    ('Welcome back',    'Sign in to your account'),
+      _Mode.join:      ('Join ViBE',       'Enter your invite code to get started'),
+      _Mode.ownServer: ('Connect Server',  'Use your own Jellyfin server'),
     };
     final (title, subtitle) = titles[_mode]!;
     return Column(
@@ -338,12 +434,36 @@ class _LoginScreenState extends State<LoginScreen>
             onChanged:    _checkCode,
           ),
           if (_codeValid) ...[
+            const SizedBox(height: 20),
+            // Jellyfin server credentials section
+            _SectionLabel(
+              icon: Icons.dns_outlined,
+              label: _jellyfinServerLabel(_validatedInvite),
+            ),
+            const SizedBox(height: 12),
+            _Field(
+              controller: _jellyfinUserCtrl,
+              label: 'Jellyfin Username',
+              hint: 'Your account on this server',
+            ),
+            const SizedBox(height: 12),
+            _Field(
+              controller: _jellyfinPassCtrl,
+              label: 'Jellyfin Password',
+              obscure: _jellyfinObscure,
+              suffix: _ObscureToggle(
+                obscure: _jellyfinObscure,
+                onTap: () => setState(() => _jellyfinObscure = !_jellyfinObscure),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _SectionLabel(icon: Icons.person_outline, label: 'Your ViBE account'),
             const SizedBox(height: 12),
             _Field(controller: _nameCtrl,     label: 'Your name'),
             const SizedBox(height: 12),
             _Field(controller: _emailCtrl,    label: 'Email',    keyboard: TextInputType.emailAddress),
             const SizedBox(height: 12),
-            _Field(controller: _passwordCtrl, label: 'Password', obscure: _obscure,
+            _Field(controller: _passwordCtrl, label: 'ViBE Password', obscure: _obscure,
               suffix: _ObscureToggle(obscure: _obscure, onTap: () => setState(() => _obscure = !_obscure)),
             ),
           ],
@@ -351,26 +471,72 @@ class _LoginScreenState extends State<LoginScreen>
 
       case _Mode.ownServer:
         return [
-          _Field(controller: _serverCtrl,  label: 'Jellyfin URL',
-            hint: 'https://jellyfin.example.com', keyboard: TextInputType.url),
+          // Jellyfin server section
+          _SectionLabel(icon: Icons.dns_outlined, label: 'Your Jellyfin server'),
+          const SizedBox(height: 12),
+          _Field(
+            controller: _serverCtrl,
+            label: 'Server URL',
+            hint: 'https://jellyfin.example.com',
+            keyboard: TextInputType.url,
+          ),
+          const SizedBox(height: 12),
+          _Field(
+            controller: _jellyfinUserCtrl,
+            label: 'Jellyfin Username',
+          ),
+          const SizedBox(height: 12),
+          _Field(
+            controller: _jellyfinPassCtrl,
+            label: 'Jellyfin Password',
+            obscure: _jellyfinObscure,
+            suffix: _ObscureToggle(
+              obscure: _jellyfinObscure,
+              onTap: () => setState(() => _jellyfinObscure = !_jellyfinObscure),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // ViBE account section
+          _SectionLabel(icon: Icons.person_outline, label: 'Your ViBE account'),
           const SizedBox(height: 12),
           _Field(controller: _nameCtrl,     label: 'Your name'),
           const SizedBox(height: 12),
           _Field(controller: _emailCtrl,    label: 'Email',    keyboard: TextInputType.emailAddress),
           const SizedBox(height: 12),
-          _Field(controller: _passwordCtrl, label: 'Password', obscure: _obscure,
-            suffix: _ObscureToggle(obscure: _obscure, onTap: () => setState(() => _obscure = !_obscure)),
+          _Field(
+            controller: _passwordCtrl,
+            label: 'ViBE Password',
+            obscure: _obscure,
+            suffix: _ObscureToggle(
+              obscure: _obscure,
+              onTap: () => setState(() => _obscure = !_obscure),
+            ),
           ),
         ];
     }
   }
 
+  String _jellyfinServerLabel(Map<String, dynamic>? invite) {
+    final server = invite?['servers'] as Map<String, dynamic>?;
+    final name   = server?['server_name'] as String?;
+    final url    = server?['server_url']  as String?;
+    if (name != null && name.isNotEmpty) return 'Server: $name';
+    if (url  != null && url.isNotEmpty)  {
+      final host = Uri.tryParse(url)?.host ?? url;
+      return 'Server: $host';
+    }
+    return 'Jellyfin server';
+  }
+
   Widget _buildSubmitButton() {
-    final labels = {
-      _Mode.signIn:    'Sign In',
-      _Mode.join:      'Create Account',
-      _Mode.ownServer: 'Create Account',
-    };
+    String label;
+    if (_mode == _Mode.signIn) {
+      label = 'Sign In';
+    } else if (_mode == _Mode.ownServer) {
+      label = _loading ? 'Connecting...' : 'Connect & Create Account';
+    } else {
+      label = 'Create Account';
+    }
 
     return GestureDetector(
       onTap: _loading ? null : _submit,
@@ -397,7 +563,7 @@ class _LoginScreenState extends State<LoginScreen>
                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
               )
             : Text(
-                labels[_mode]!,
+                label,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -495,6 +661,35 @@ class _LoginScreenState extends State<LoginScreen>
 }
 
 // ── Subwidgets ────────────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.icon, required this.label});
+  final IconData icon;
+  final String   label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: _kAccentLight, size: 14),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            color: _kAccentLight,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Container(height: 1, color: const Color(0x22FFFFFF)),
+        ),
+      ],
+    );
+  }
+}
 
 class _ModeTab extends StatelessWidget {
   const _ModeTab({
@@ -648,7 +843,6 @@ class _CodeField extends StatelessWidget {
   }
 }
 
-// Auto-inserts the "VIBE-" prefix and formats code as user types
 class _CodeFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
@@ -656,14 +850,12 @@ class _CodeFormatter extends TextInputFormatter {
   ) {
     var text = value.text.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9\-]'), '');
 
-    // Strip the prefix if present for easier editing
     if (text.startsWith('VIBE-')) {
       text = text.substring(5);
     } else {
       text = text.replaceAll('-', '');
     }
 
-    // Limit suffix to 6 chars
     if (text.length > 6) { text = text.substring(0, 6); }
 
     final display = 'VIBE-$text';

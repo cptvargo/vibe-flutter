@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'audio/audio_handler.dart';
+import 'config/jellyfin_config.dart';
 import 'config/vibe_config.dart';
 import 'navigation/router.dart';
 import 'theme/palette_service.dart';
@@ -39,6 +40,9 @@ Future<void> main() async {
   );
 
   await Hive.initFlutter();
+  // Load Jellyfin credentials before any screen renders.
+  // Reads from Hive (fast), falls back to Supabase metadata on reinstall.
+  await JellyfinConfig.load();
   await DownloadService.init();
   await OfflinePlaylistService.init();
   await PaletteService.init();

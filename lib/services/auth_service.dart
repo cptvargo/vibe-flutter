@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/jellyfin_config.dart';
 import '../config/vibe_config.dart';
+import '../api/jellyfin_api.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -61,19 +63,21 @@ class AuthService {
     await supabase.from('profiles').update(data).eq('id', user!.id);
   }
 
-  // Validate an invite code via SECURITY DEFINER function — avoids exposing the raw table
+  // Validate an invite code via SECURITY DEFINER function
   static Future<Map<String, dynamic>?> redeemInviteCode(String code) async {
     final res = await supabase.rpc('validate_invite_code', params: {'p_code': code});
     if (res == null) return null;
     return Map<String, dynamic>.from(res as Map);
   }
 
-  // Sign up via invite code: creates account, stores server_url, decrements code usage
+  // Sign up via invite code: creates account, stores server credentials
   static Future<AuthResponse> signUpWithInviteCode({
     required String email,
     required String password,
     required String displayName,
     required Map<String, dynamic> inviteData,
+    required String jellyfinToken,
+    required String jellyfinUserId,
   }) async {
     final server    = inviteData['servers'] as Map<String, dynamic>?;
     final serverUrl = (server?['server_url'] as String?) ?? VibeConfig.serverUrl;
@@ -82,61 +86,105 @@ class AuthService {
     final res = await supabase.auth.signUp(
       email:    email,
       password: password,
-      data:     {'display_name': displayName},
+      data: {
+        'display_name':        displayName,
+        'server_url':          serverUrl,
+        'jellyfin_token':      jellyfinToken,
+        'jellyfin_user_id':    jellyfinUserId,
+        'jellyfin_server_url': serverUrl,
+      },
     );
 
     if (res.user != null) {
-      // Attach the server URL to this user's profile (best-effort — session may not be active yet)
       try {
         await supabase.from('profiles').update({
           'server_url': serverUrl,
         }).eq('id', res.user!.id);
       } catch (_) {}
 
-      // Decrement uses_remaining — fire-and-forget, don't block sign-in on this
       supabase.rpc('decrement_invite_uses', params: {'invite_id': inviteId}).catchError((_) {});
     }
 
     return res;
   }
 
-  // Sign up with own server (public path)
-  // Server registration is deferred to ensureServerRegistered() after auth is active.
+  // Sign up with own server: authenticates with Jellyfin first, then creates ViBE account
   static Future<AuthResponse> signUpWithServer({
     required String email,
     required String password,
     required String displayName,
     required String serverUrl,
+    required String jellyfinToken,
+    required String jellyfinUserId,
   }) async {
     final res = await supabase.auth.signUp(
       email:    email,
       password: password,
-      data:     {'display_name': displayName, 'server_url': serverUrl},
+      data: {
+        'display_name':        displayName,
+        'server_url':          serverUrl,
+        'jellyfin_token':      jellyfinToken,
+        'jellyfin_user_id':    jellyfinUserId,
+        'jellyfin_server_url': serverUrl,
+      },
     );
-
-    // Store server_url in user metadata so ensureServerRegistered() can pick it up
-    // after the session is established. We avoid writing to DB here because the
-    // session may not be active yet (RLS would reject it).
     return res;
   }
 
+  // Load Jellyfin credentials into JellyfinConfig.
+  // Checks Hive first, then Supabase metadata (covers reinstall).
+  static Future<void> loadJellyfinConfig() async {
+    await JellyfinConfig.load();
+  }
+
+  // Save Jellyfin credentials to Hive + Supabase metadata.
+  // Called immediately after a successful Jellyfin authentication.
+  static Future<void> saveJellyfinCredentials({
+    required String serverUrl,
+    required String token,
+    required String userId,
+  }) async {
+    await JellyfinConfig.save(serverUrl: serverUrl, apiKey: token, userId: userId);
+    // Persist to Supabase metadata so a reinstall can recover credentials
+    try {
+      await supabase.auth.updateUser(UserAttributes(
+        data: {
+          'jellyfin_token':      token,
+          'jellyfin_user_id':    userId,
+          'jellyfin_server_url': serverUrl,
+        },
+      ));
+    } catch (_) {}
+  }
+
+  // Authenticate against a Jellyfin server and configure JellyfinConfig.
+  // Returns null on failure (bad URL, wrong credentials, unreachable server).
+  static Future<({String token, String userId})?> authenticateJellyfin({
+    required String serverUrl,
+    required String username,
+    required String password,
+  }) async {
+    return JellyfinApi.authenticateByName(
+      serverUrl: serverUrl,
+      username:  username,
+      password:  password,
+    );
+  }
+
   // Ensure the user has a server entry — silently registers if missing.
-  // Called from SettingsScreen after auth is fully active.
   static Future<void> ensureServerRegistered() async {
     if (user == null) return;
     final existing = await getMyServer();
     if (existing != null) return;
 
-    // Priority: profile DB value → user metadata (set at signup) → VibeConfig fallback
-    final profile     = await getProfile();
-    final metaUrl     = user!.userMetadata?['server_url'] as String?;
-    final serverUrl   = (profile?['server_url'] as String?)?.isNotEmpty == true
+    final profile   = await getProfile();
+    final metaUrl   = user!.userMetadata?['server_url'] as String?;
+    final serverUrl = (profile?['server_url'] as String?)?.isNotEmpty == true
         ? profile!['server_url'] as String
         : metaUrl?.isNotEmpty == true
             ? metaUrl!
             : VibeConfig.serverUrl;
 
-    // Also backfill the profile server_url if it wasn't set during signup
     if ((profile?['server_url'] as String?)?.isEmpty != false) {
       await supabase.from('profiles').update({'server_url': serverUrl}).eq('id', user!.id);
     }
@@ -187,7 +235,6 @@ class AuthService {
   }
 
   // Permanently delete the current user's account and all associated data.
-  // Requires the delete_user() SQL function to exist in Supabase (SECURITY DEFINER).
   static Future<void> deleteAccount() async {
     if (user == null) return;
     await supabase.rpc('delete_user');
@@ -202,7 +249,6 @@ class AuthService {
   }
 
   // Which Jellyfin server should this user connect to?
-  // Returns the managed server URL or a custom one stored in their profile
   static Future<String> resolveServerUrl() async {
     final profile = await getProfile();
     return profile?['server_url'] as String? ?? VibeConfig.serverUrl;

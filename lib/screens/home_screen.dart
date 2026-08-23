@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
+import '../widgets/reauth_sheet.dart';
 import '../providers.dart';
 import '../services/recently_played_service.dart';
 import '../theme/vibe_theme.dart';
@@ -108,6 +109,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _loading      = false;
       });
       _enterCtrl.forward(from: 0);
+    } on JellyfinAuthException {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      final reconnected = await ReauthSheet.show(context);
+      if (reconnected && mounted) _loadData();
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = e.toString(); });
     }
