@@ -423,7 +423,8 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
               ),
             ),
 
-            const DecoratedBox(
+            // Softened overlay — lets album color bleed through the bottom half.
+            DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
@@ -431,10 +432,21 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
                   colors: [
                     Colors.transparent,
                     Colors.transparent,
-                    Color(0xCC000000),
-                    Colors.black,
+                    const Color(0x55000000),
+                    const Color(0x99000000),
                   ],
-                  stops: [0.0, 0.25, 0.52, 0.78],
+                  stops: const [0.0, 0.38, 0.65, 1.0],
+                ),
+              ),
+            ),
+
+            // Album color rises from below into the controls area.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0.0, 1.8),
+                  radius: 1.4,
+                  colors: [glow.withAlpha(0x99), glow.withAlpha(0)],
                 ),
               ),
             ),
@@ -862,6 +874,7 @@ class _ContentState extends ConsumerState<_Content> {
                   final isCurrent = track.id == currentId;
                   return _QueueItem(
                     key:       ValueKey('${track.id}_$index'),
+                    index:     index,
                     track:     track,
                     isCurrent: isCurrent,
                     theme:     theme,
@@ -1185,6 +1198,7 @@ class _ContentState extends ConsumerState<_Content> {
 
 // ── Single queue row ────────────────────────────────────────────────────────
 class _QueueItem extends StatelessWidget {
+  final int          index;
   final MediaItem    track;
   final bool         isCurrent;
   final VibeTheme    theme;
@@ -1192,6 +1206,7 @@ class _QueueItem extends StatelessWidget {
 
   const _QueueItem({
     super.key,
+    required this.index,
     required this.track,
     required this.isCurrent,
     required this.theme,
@@ -1273,7 +1288,14 @@ class _QueueItem extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                  child: Icon(Icons.drag_handle_rounded,
+                      color: Colors.white.withAlpha(0x33), size: 20),
+                ),
+              ),
             ],
           ),
         ),
