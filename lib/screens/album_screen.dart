@@ -239,7 +239,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                             if (_tracks.isNotEmpty)
                               StreamBuilder<void>(
                                 stream: DownloadService.onChange,
-                                builder: (_, __) {
+                                builder: (context, snap) {
                                   final allDone = _tracks.every(
                                       (t) => DownloadService.isDownloaded(t.id));
                                   final anyActive = _tracks.any(
@@ -266,6 +266,20 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                                           strokeWidth: 2.5,
                                           color: theme.accentBright,
                                         ),
+                                      ),
+                                    );
+                                  }
+                                  final anyError = _tracks.any(
+                                      (t) => DownloadService.errorFor(t.id) != null);
+                                  if (anyError) {
+                                    return GestureDetector(
+                                      onTap: () {
+                                        DownloadService.downloadTracks(_tracks);
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: Icon(Icons.cloud_off_rounded,
+                                            color: Colors.red.shade400, size: 30),
                                       ),
                                     );
                                   }

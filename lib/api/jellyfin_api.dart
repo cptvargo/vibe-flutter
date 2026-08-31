@@ -57,6 +57,10 @@ class JellyfinApi {
   static String downloadUrl(String itemId) =>
       '$_base/Items/$itemId/Download?api_key=$_key&UserId=$_user';
 
+  // Auth header value used by raw HttpClient callers (e.g. DownloadService).
+  static String get authHeader =>
+      'MediaBrowser Client="Vibe", Device="VibeApp", DeviceId="vibe-flutter-001", Version="1.0.0", Token="$_key"';
+
   // ── Library queries ────────────────────────────────────────────────────────
   // ParentId is appended only when a library ID is configured. Own-server
   // users have no library filter — their server is entirely theirs.

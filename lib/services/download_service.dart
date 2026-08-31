@@ -117,8 +117,16 @@ class DownloadService {
 
     final path = '${_dir!}/${track.id}.audio';
     try {
-      final req = await _httpClient.getUrl(Uri.parse(JellyfinApi.downloadUrl(track.id)));
+      // Use the stream URL (same as playback) — it needs no special Download
+      // permission and never redirects. Add the Emby auth header because some
+      // Jellyfin versions reject api_key-only requests on certain endpoints.
+      final req = await _httpClient.getUrl(Uri.parse(JellyfinApi.streamUrl(track.id)));
+      req.headers.add('X-Emby-Authorization', JellyfinApi.authHeader);
       final res = await req.close();
+
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode} for track ${track.id}');
+      }
 
       final total    = res.contentLength;
       int   received = 0;
