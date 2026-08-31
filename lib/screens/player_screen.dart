@@ -1647,14 +1647,6 @@ class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
 
     return GestureDetector(
       onDoubleTapDown: _onDoubleTap,
-      onHorizontalDragEnd: (details) {
-        final v = details.primaryVelocity ?? 0;
-        if (v < -400) {
-          widget.handler.skipToNext();
-        } else if (v > 400) {
-          widget.handler.skipToPrevious();
-        }
-      },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Stack(
