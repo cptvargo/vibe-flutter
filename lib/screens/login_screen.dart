@@ -103,15 +103,15 @@ class _LoginScreenState extends State<LoginScreen>
   void _setError(String msg) => setState(() { _error = msg; _loading = false; });
 
   Future<void> _checkCode(String raw) async {
-    var code = raw.toUpperCase().trim();
-    if (code.startsWith('VIBE-')) code = code.substring(5);
+    final code = raw.toUpperCase().trim();
     if (code.length < 4) {
       setState(() { _codeValid = false; _validatedInvite = null; });
       return;
     }
     setState(() => _codeChecking = true);
     try {
-      final data = await AuthService.redeemInviteCode(code);
+      // Controller holds just the suffix (e.g. "ABCD12"); Supabase stores full code
+      final data = await AuthService.redeemInviteCode('VIBE-$code');
       if (mounted) {
         setState(() {
           _codeChecking    = false;
@@ -224,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (_mode == _Mode.join) {
         // Create Jellyfin account via edge function first
         final jellyfinResult = await AuthService.createJellyfinAccountForInvite(
-          inviteCode: _codeCtrl.text.trim(),
+          inviteCode: 'VIBE-${_codeCtrl.text.trim()}',
           username:   _jellyfinUserCtrl.text.trim(),
           password:   _jellyfinPassCtrl.text,
         );
@@ -796,11 +796,9 @@ class _CodeField extends StatelessWidget {
       ),
       decoration: InputDecoration(
         labelText: 'Invite Code',
-        hintText:  'XXXXXX',
+        hintText:  'VIBE-XXXXXX',
         hintStyle: const TextStyle(color: Color(0xFF555566), letterSpacing: 2),
         labelStyle: const TextStyle(color: _kTextDim, fontSize: 13),
-        prefixText: 'VIBE-',
-        prefixStyle: TextStyle(color: _kTextDim, fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 4),
         filled:    true,
         fillColor: const Color(0xFF0E0E1C),
         suffixIcon: checking
@@ -838,18 +836,17 @@ class _CodeFormatter extends TextInputFormatter {
   ) {
     var text = value.text.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9\-]'), '');
 
-    if (text.startsWith('VIBE-')) {
-      text = text.substring(5);
-    } else {
-      text = text.replaceAll('-', '');
-    }
+    // Strip VIBE- prefix if user pasted the full code
+    if (text.startsWith('VIBE-')) text = text.substring(5);
 
-    if (text.length > 6) { text = text.substring(0, 6); }
+    // Remove any remaining dashes so the controller holds only the suffix
+    text = text.replaceAll('-', '');
 
-    final display = 'VIBE-$text';
+    if (text.length > 6) text = text.substring(0, 6);
+
     return TextEditingValue(
-      text:      display,
-      selection: TextSelection.collapsed(offset: display.length),
+      text:      text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }
