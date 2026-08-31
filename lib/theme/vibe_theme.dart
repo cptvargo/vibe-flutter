@@ -37,7 +37,7 @@ class VibeTheme {
     final rawDark      = p.darkVibrant;
     final surface      = _darken(rawDark, 0.40);
     final background   = Color.lerp(rawDark, Colors.black, 0.88) ?? Colors.black;
-    final isLight      = _pickTextIsLight(surface);
+    final isLight      = _pickTextIsLight(background);
     final textColor    = isLight ? Colors.white : Colors.black;
 
     return VibeTheme(

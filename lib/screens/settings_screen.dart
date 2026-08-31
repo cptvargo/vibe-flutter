@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 import '../providers.dart';
 import '../services/auth_service.dart';
 import '../theme/vibe_theme.dart';
@@ -72,6 +73,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       label: _server?['server_name'] as String? ?? 'My Server',
                       value: _server?['server_url'] as String? ?? '',
                     ),
+                    if (_server != null) ...[
+                      _Divider(theme: theme),
+                      _AdminKeyTile(
+                        theme:    theme,
+                        server:   _server!,
+                        onSaved:  _load,
+                        showSnack: _showSnack,
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -626,6 +636,15 @@ class _InviteTileState extends State<_InviteTile> {
     });
   }
 
+  void _share() {
+    if (_lastCode == null) return;
+    SharePlus.instance.share(
+      ShareParams(
+        text: "Hey! I'm sharing my ViBE music library with you. Download ViBE and use invite code $_lastCode to get in.",
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.server == null) {
@@ -714,16 +733,178 @@ class _InviteTileState extends State<_InviteTile> {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              _copied ? 'Copied!' : 'Tap to copy • Valid for 10 uses',
-              style: TextStyle(
-                fontSize: 11,
-                color: _copied ? const Color(0xFF4CAF50) : widget.theme.textFaint,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _copied ? 'Copied!' : 'Tap to copy • Valid for 10 uses',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _copied ? const Color(0xFF4CAF50) : widget.theme.textFaint,
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _share,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.ios_share, size: 14, color: widget.theme.accentBright),
+                      const SizedBox(width: 4),
+                      Text('Share', style: TextStyle(fontSize: 11, color: widget.theme.accentBright)),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+// ── Admin API key tile ────────────────────────────────────────────────────────
+
+class _AdminKeyTile extends StatelessWidget {
+  const _AdminKeyTile({
+    required this.theme,
+    required this.server,
+    required this.onSaved,
+    required this.showSnack,
+  });
+  final VibeTheme theme;
+  final Map<String, dynamic> server;
+  final VoidCallback onSaved;
+  final void Function(String) showSnack;
+
+  bool get _configured => (server['admin_api_key'] as String?)?.isNotEmpty == true;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _showSheet(context),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(Icons.key_outlined, size: 18,
+              color: theme.accentBright.withAlpha(0xAA)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Jellyfin Admin API Key',
+                    style: TextStyle(fontSize: 14, color: theme.textColor,
+                      fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 2),
+                  Text(
+                    _configured
+                        ? 'Configured — invited users get Jellyfin accounts automatically'
+                        : 'Not set — invited users must create their own Jellyfin account',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _configured ? const Color(0xFF4CAF50) : theme.textFaint,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.edit_outlined, size: 16, color: theme.textFaint),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSheet(BuildContext context) {
+    final ctrl  = TextEditingController();
+    var saving  = false;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF12121E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24,
+            24 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Jellyfin Admin API Key',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+              const SizedBox(height: 8),
+              const Text(
+                'Get this from Jellyfin Dashboard → API Keys. ViBE uses it to create Jellyfin accounts for invited users — it never leaves Supabase.',
+                style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 13, height: 1.5),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                keyboardAppearance: Brightness.dark,
+                autocorrect: false,
+                style: const TextStyle(color: Colors.white, fontSize: 14,
+                  fontFamily: 'monospace', letterSpacing: 0.5),
+                decoration: InputDecoration(
+                  hintText: 'Paste your API key here',
+                  hintStyle: const TextStyle(color: Color(0xFF555566)),
+                  filled: true,
+                  fillColor: const Color(0xFF0E0E1C),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0x22FFFFFF)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: theme.accent, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                onPressed: saving ? null : () async {
+                  final key = ctrl.text.trim();
+                  if (key.isEmpty) return;
+                  setSt(() => saving = true);
+                  try {
+                    await AuthService.saveAdminApiKey(
+                      serverId: server['id'] as String,
+                      apiKey: key,
+                    );
+                    if (ctx.mounted) {
+                      Navigator.pop(ctx);
+                      showSnack('Admin API key saved.');
+                      onSaved();
+                    }
+                  } catch (_) {
+                    setSt(() => saving = false);
+                    if (ctx.mounted) showSnack('Failed to save key. Try again.');
+                  }
+                },
+                child: saving
+                    ? const SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Save Key', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 }

@@ -6,7 +6,9 @@ import '../screens/all_artists_screen.dart';
 import '../screens/artist_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/mix_picker_screen.dart';
+import '../screens/on_deck_screen.dart';
 import '../screens/player_screen.dart';
+import '../screens/song_link_screen.dart';
 import '../screens/reset_password_screen.dart';
 import '../widgets/main_shell.dart';
 
@@ -67,7 +69,21 @@ final GoRouter router = GoRouter(
           path: 'all-artists',
           builder: (context, state) => const AllArtistsScreen(),
         ),
+        GoRoute(
+          path: 'on-deck',
+          builder: (context, state) => const OnDeckScreen(),
+        ),
       ],
+    ),
+
+    // Deep link: vibemusic://song/{id} — opened from a ViBE Out share card.
+    GoRoute(
+      path: '/song/:id',
+      builder: (context, state) => SongLinkScreen(
+        trackId: state.pathParameters['id']!,
+        title:   state.uri.queryParameters['title']  ?? '',
+        artist:  state.uri.queryParameters['artist'] ?? '',
+      ),
     ),
 
     // Player stays at root level — it's a full-screen modal overlay, not a

@@ -5,7 +5,6 @@ import '../api/jellyfin_api.dart';
 import '../providers.dart';
 import '../theme/vibe_theme.dart';
 import '../widgets/artist_avatar.dart';
-import '../widgets/vibe_ui.dart';
 
 class AllArtistsScreen extends ConsumerStatefulWidget {
   const AllArtistsScreen({super.key});

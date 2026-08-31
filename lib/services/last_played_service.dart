@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'package:audio_service/audio_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Persists a single MediaItem snapshot so the mini player can be restored on
+/// cold start without network access. Does NOT track position — On Deck handles
+/// full session persistence.
 class LastPlayedService {
   static const _key = 'vibe_last_played_v1';
 

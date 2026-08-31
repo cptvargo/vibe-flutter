@@ -71,12 +71,15 @@ class AuthService {
   }
 
   // Sign up via invite code: creates ViBE account linked to the inviting server.
-  // No Jellyfin credentials needed — the server handles auth transparently.
+  // Call createJellyfinAccountForInvite() first to get the Jellyfin credentials,
+  // then pass them here so they're embedded in ViBE account metadata.
   static Future<AuthResponse> signUpWithInviteCode({
     required String email,
     required String password,
     required String displayName,
     required Map<String, dynamic> inviteData,
+    String? jellyfinToken,
+    String? jellyfinUserId,
   }) async {
     final server    = inviteData['servers'] as Map<String, dynamic>?;
     final serverUrl = (server?['server_url'] as String?) ?? VibeConfig.serverUrl;
@@ -86,8 +89,11 @@ class AuthService {
       email:    email,
       password: password,
       data: {
-        'display_name': displayName,
-        'server_url':   serverUrl,
+        'display_name':        displayName,
+        'server_url':          serverUrl,
+        if (jellyfinToken  != null) 'jellyfin_token':      jellyfinToken,
+        if (jellyfinUserId != null) 'jellyfin_user_id':    jellyfinUserId,
+        if (jellyfinToken  != null) 'jellyfin_server_url': serverUrl,
       },
     );
 
@@ -102,6 +108,45 @@ class AuthService {
     }
 
     return res;
+  }
+
+  // Calls the create-jellyfin-user edge function to auto-create a Jellyfin
+  // account on the inviting server using the owner's stored admin API key.
+  // Returns { server_url, jellyfin_user_id, jellyfin_token, invite_id } on success,
+  // or throws with a user-readable message on failure.
+  static Future<Map<String, dynamic>> createJellyfinAccountForInvite({
+    required String inviteCode,
+    required String username,
+    required String password,
+  }) async {
+    final res = await supabase.functions.invoke(
+      'create-jellyfin-user',
+      body: {
+        'invite_code': inviteCode,
+        'username':    username,
+        'password':    password,
+      },
+    );
+
+    final data = res.data as Map<String, dynamic>?;
+    if (res.status != 200 || data == null) {
+      final msg = data?['error'] as String? ?? 'Failed to create Jellyfin account.';
+      throw Exception(msg);
+    }
+
+    return data;
+  }
+
+  // Save the admin API key for the owner's server so invited users can
+  // get Jellyfin accounts created automatically.
+  static Future<void> saveAdminApiKey({
+    required String serverId,
+    required String apiKey,
+  }) async {
+    await supabase
+        .from('servers')
+        .update({'admin_api_key': apiKey.trim()})
+        .eq('id', serverId);
   }
 
   // Sign up with own server: authenticates with Jellyfin first, then creates ViBE account

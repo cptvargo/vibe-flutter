@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +15,13 @@ import '../audio/audio_handler.dart';
 import '../providers.dart';
 import '../theme/ambient_theme.dart';
 import '../theme/vibe_theme.dart';
+
+const _kTopBarH        = 56.0;   // drag handle + options row
+const _kControlsPanelH = 268.0;
+const _kQueueHintH     = 48.0;   // "ViBE Queue" pull-up strip below controls
+const _kCompactHeaderH  = 80.0;
+const _kArtCompact      = 56.0;
+const _kArtCompactLeft  = 16.0;
 
 const _kAlbumSvg = '''
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
@@ -36,9 +44,10 @@ class PlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   double _dragOffset = 0;
   late final AnimationController _snapCtrl;
+  late final AnimationController _expansion; // 0 = full player, 1 = compact+queue
   Animation<double>? _snapAnim;
   StreamSubscription<MediaItem?>? _mediaItemSub;
   MediaItem? _lastItem;
@@ -56,6 +65,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
+    _expansion = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
     _playerOpenCtrl = ref.read(playerOpenProvider.notifier);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -71,8 +84,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _crossedEarlyThreshold = false;
           _queueEndTimer?.cancel();
         } else if (_queueLoaded && _nearingEnd && _nearingEndTrackId == _lastItem?.id) {
-          // Queue ended naturally: position was genuinely past 90% of this
-          // specific track, not a stale value from a previous session.
           _queueEndTimer?.cancel();
           _queueEndTimer = Timer(const Duration(milliseconds: 400), () {
             if (!mounted) return;
@@ -82,9 +93,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       });
 
-      // Only set _nearingEnd once position has been seen below 80% for the
-      // current track — prevents stale end-of-track position from a prior
-      // play session from triggering dismiss on a freshly loaded track.
       handler.positionStream.listen((pos) {
         final dur = handler.duration;
         if (dur == null || dur.inMilliseconds == 0) return;
@@ -108,12 +116,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _mediaItemSub?.cancel();
     _queueEndTimer?.cancel();
     _snapCtrl.dispose();
+    _expansion.dispose();
     _playerOpenCtrl?.state = false;
     super.dispose();
   }
 
   void _animateDismiss() {
-    // Let mini player reappear on the underlying screen as player slides away
     _playerOpenCtrl?.state = false;
     final screenH = MediaQuery.of(context).size.height;
     _snapAnim = Tween<double>(begin: _dragOffset, end: screenH)
@@ -127,18 +135,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
-    if (d.delta.dy > 0 || _dragOffset > 0) {
-      setState(() => _dragOffset = (_dragOffset + d.delta.dy).clamp(0.0, double.infinity));
+    final dy = d.delta.dy;
+    final screenH = MediaQuery.of(context).size.height;
+    if (_expansion.value > 0) {
+      _expansion.value = (_expansion.value - dy / (screenH * 0.45)).clamp(0.0, 1.0);
+      return;
+    }
+    if (dy < 0 && _dragOffset == 0) {
+      _expansion.value = (-dy / (screenH * 0.45)).clamp(0.0, 1.0);
+      return;
+    }
+    if (dy > 0 || _dragOffset > 0) {
+      setState(() => _dragOffset = (_dragOffset + dy).clamp(0.0, double.infinity));
     }
   }
 
   void _onDragEnd(DragEndDetails d) {
-    final screenH = MediaQuery.of(context).size.height;
     final velocity = d.primaryVelocity ?? 0;
+    if (_expansion.value > 0) {
+      double target;
+      if (velocity < -400) {
+        target = 1.0;
+      } else if (velocity > 400) {
+        target = 0.0;
+      } else {
+        target = _expansion.value >= 0.45 ? 1.0 : 0.0;
+      }
+      _expansion.animateTo(target,
+          curve: Curves.easeOutCubic,
+          duration: const Duration(milliseconds: 320));
+      return;
+    }
+    final screenH = MediaQuery.of(context).size.height;
     if (velocity > 500 || _dragOffset > screenH * 0.28) {
       _animateDismiss();
     } else {
-      // Snap back up
       _snapAnim = Tween<double>(begin: _dragOffset, end: 0)
           .animate(CurvedAnimation(parent: _snapCtrl, curve: Curves.easeOut));
       _snapAnim!.addListener(() {
@@ -150,68 +181,98 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  void _onCompactHeaderDragUpdate(DragUpdateDetails d) {
+    if (d.delta.dy > 0) {
+      final screenH = MediaQuery.of(context).size.height;
+      _expansion.value =
+          (_expansion.value - d.delta.dy / (screenH * 0.45)).clamp(0.0, 1.0);
+    }
+  }
+
+  void _onCompactHeaderDragEnd(DragEndDetails d) {
+    final velocity = d.primaryVelocity ?? 0;
+    final snapTo = velocity > 300 || _expansion.value < 0.5 ? 0.0 : 1.0;
+    _expansion.animateTo(snapTo,
+        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 320));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final handler   = ref.read(audioHandlerProvider);
-    final theme     = ref.watch(playerThemeProvider);
-    final ambient   = ref.watch(ambientThemeProvider);
-    final screenH   = MediaQuery.of(context).size.height;
-    // As the player slides down, the underlying page is revealed
-    final revealT   = (_dragOffset / screenH).clamp(0.0, 1.0);
-    final barrierAlpha = ((1.0 - revealT) * 0x99).round(); // 0x99 ≈ 60% black
+    final handler = ref.read(audioHandlerProvider);
+    final theme   = ref.watch(playerThemeProvider);
+    final ambient = ref.watch(ambientThemeProvider);
 
-    return Stack(
-      children: [
-        // Barrier — dims the underlying page, fades as player drags down
-        Positioned.fill(
-          child: IgnorePointer(
-            child: ColoredBox(
-              color: Colors.black.withAlpha(barrierAlpha),
-            ),
-          ),
-        ),
+    return AnimatedBuilder(
+      animation: _expansion,
+      builder: (context, child) {
+        final screenH      = MediaQuery.of(context).size.height;
+        final revealT      = (_dragOffset / screenH).clamp(0.0, 1.0);
+        final barrierAlpha = ((1.0 - revealT) * 0x99).round();
+        final queueOpen    = _expansion.value >= 0.95;
 
-        // Player card — slides down on drag, sits on top of barrier
-        Transform.translate(
-          offset: Offset(0, _dragOffset),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onVerticalDragUpdate: _onDragUpdate,
-            onVerticalDragEnd: _onDragEnd,
-            child: StreamBuilder<MediaItem?>(
-              stream: handler.mediaItem,
-              builder: (context, snap) {
-                // Fall back to _lastItem during brief null transitions (queue setup,
-                // track swaps). Only show black if we've never seen any item.
-                final item = snap.data ?? _lastItem;
-                if (item == null) {
-                  return Scaffold(
-                    backgroundColor: Colors.black,
-                    body: const SizedBox.expand(),
-                  );
-                }
-                return _Body(handler: handler, item: item, theme: theme, ambient: ambient);
-              },
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(color: Colors.black.withAlpha(barrierAlpha)),
+              ),
             ),
-          ),
-        ),
-      ],
+            Transform.translate(
+              offset: Offset(0, _dragOffset),
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onVerticalDragUpdate: queueOpen ? null : _onDragUpdate,
+                onVerticalDragEnd:    queueOpen ? null : _onDragEnd,
+                child: child,
+              ),
+            ),
+          ],
+        );
+      },
+      child: StreamBuilder<MediaItem?>(
+        stream: ref.read(audioHandlerProvider).mediaItem,
+        builder: (context, snap) {
+          final item = snap.data ?? _lastItem;
+          if (item == null) {
+            return Scaffold(
+              backgroundColor: Colors.black,
+              body: const SizedBox.expand(),
+            );
+          }
+          return _Body(
+            handler:                    handler,
+            item:                       item,
+            theme:                      theme,
+            ambient:                    ambient,
+            expansion:                  _expansion,
+            onCompactHeaderDragUpdate:  _onCompactHeaderDragUpdate,
+            onCompactHeaderDragEnd:     _onCompactHeaderDragEnd,
+          );
+        },
+      ),
     );
   }
 }
 
 // ── Background + safe-area wrapper ─────────────────────────────────────────
 class _Body extends StatelessWidget {
-  final VibeAudioHandler handler;
-  final MediaItem        item;
-  final VibeTheme        theme;
-  final AmbientTheme     ambient;
+  final VibeAudioHandler          handler;
+  final MediaItem                 item;
+  final VibeTheme                 theme;
+  final AmbientTheme              ambient;
+  final AnimationController       expansion;
+  final GestureDragUpdateCallback onCompactHeaderDragUpdate;
+  final GestureDragEndCallback    onCompactHeaderDragEnd;
 
   const _Body({
     required this.handler,
     required this.item,
     required this.theme,
     required this.ambient,
+    required this.expansion,
+    required this.onCompactHeaderDragUpdate,
+    required this.onCompactHeaderDragEnd,
   });
 
   @override
@@ -231,11 +292,14 @@ class _Body extends StatelessWidget {
               _AmbientBackground(ambient: animAmbient, artUrl: artUrl),
               SafeArea(
                 child: _Content(
-                  handler: handler,
-                  item: item,
-                  theme: theme,
-                  ambient: animAmbient,
-                  artUrl: artUrl,
+                  handler:                   handler,
+                  item:                      item,
+                  theme:                     theme,
+                  ambient:                   animAmbient,
+                  artUrl:                    artUrl,
+                  expansion:                 expansion,
+                  onCompactHeaderDragUpdate: onCompactHeaderDragUpdate,
+                  onCompactHeaderDragEnd:    onCompactHeaderDragEnd,
                 ),
               ),
             ],
@@ -290,30 +354,18 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
     return AnimatedBuilder(
       animation: _breathCtrl,
       builder: (context, _) {
-        final t    = _breathCtrl.value; // 0.0 → 1.0
-        final glow = widget.ambient.glowColor; // pure color, full alpha — we control opacity
+        final t    = _breathCtrl.value;
+        final glow = widget.ambient.glowColor;
 
-        // Three-layer lighting model that simulates physical light emanating from artwork.
-        //
-        // Layer 1 — CORE: tight, very bright, breathing.
-        //   Non-linear stops mimic inverse-square light falloff: stays intense near
-        //   the source (art), drops off sharply before reaching corners.
-        //   Center peaks 75–100% of full saturation with each breath.
-        final coreCenter = (255 * (0.75 + 0.25 * t)).round(); // 191 → 255
-        final coreMid    = (105 * (0.65 + 0.35 * t)).round(); // 68 → 105  (at 40% stop)
-
-        // Layer 2 — HALO: medium width, subtle breath.
-        //   Creates the atmospheric spread that makes the glow feel like it fills the room.
-        final haloCenter = (80  * (0.70 + 0.30 * t)).round(); // 56 → 80
+        final coreCenter = (255 * (0.75 + 0.25 * t)).round();
+        final coreMid    = (105 * (0.65 + 0.35 * t)).round();
+        final haloCenter = (80  * (0.70 + 0.30 * t)).round();
 
         return Stack(
           fit: StackFit.expand,
           children: [
-            // Absolute black base — pure palette atmosphere, not bleed from the bg
             const ColoredBox(color: Colors.black),
 
-            // Blurred art at 12% — barely visible texture; does NOT define the atmosphere.
-            // The palette-generated gradients do that.
             if (widget.artUrl != null)
               Opacity(
                 opacity: 0.12,
@@ -334,13 +386,8 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
                 ),
               ),
 
-            // Scrim on blurred art — ensures it recedes and never competes with the glow
             const ColoredBox(color: Color(0x77000000)),
 
-            // ── LAYER 1: Core glow ──────────────────────────────────────────────────
-            // Tight radius (0.78 × shortest_side) centered on artwork.
-            // Three-stop non-linear falloff: stays saturated until 40% of radius,
-            // then drops steeply — this is what makes corners go fully dark.
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
@@ -356,9 +403,6 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
               ),
             ),
 
-            // ── LAYER 2: Atmospheric halo ───────────────────────────────────────────
-            // Wider, softer — provides the ambient spread to screen edges at the art level.
-            // Breathing is slower and subtler than the core.
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
@@ -369,9 +413,6 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
               ),
             ),
 
-            // ── LAYER 3: Edge ambiance ──────────────────────────────────────────────
-            // Very wide, very soft — the "room fill" that gives physical presence.
-            // Static (no breathing) for smooth, natural ambient light feel.
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
@@ -382,9 +423,6 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
               ),
             ),
 
-            // ── VIGNETTE: Heavy bottom darkening ────────────────────────────────────
-            // Controls live in near-black — strong chiaroscuro between lit art
-            // and functional controls. This contrast IS the premium feel.
             const DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -408,12 +446,15 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
 }
 
 // ── Main content column ─────────────────────────────────────────────────────
-class _Content extends ConsumerWidget {
-  final VibeAudioHandler handler;
-  final MediaItem        item;
-  final VibeTheme        theme;
-  final AmbientTheme     ambient;
-  final String?          artUrl;
+class _Content extends ConsumerStatefulWidget {
+  final VibeAudioHandler          handler;
+  final MediaItem                 item;
+  final VibeTheme                 theme;
+  final AmbientTheme              ambient;
+  final String?                   artUrl;
+  final AnimationController       expansion;
+  final GestureDragUpdateCallback onCompactHeaderDragUpdate;
+  final GestureDragEndCallback    onCompactHeaderDragEnd;
 
   const _Content({
     required this.handler,
@@ -421,13 +462,59 @@ class _Content extends ConsumerWidget {
     required this.theme,
     required this.ambient,
     this.artUrl,
+    required this.expansion,
+    required this.onCompactHeaderDragUpdate,
+    required this.onCompactHeaderDragEnd,
   });
 
-  void _showOptions(BuildContext context, WidgetRef ref, MediaItem item, VibeTheme theme) {
+  @override
+  ConsumerState<_Content> createState() => _ContentState();
+}
+
+class _ContentState extends ConsumerState<_Content> {
+  late final ScrollController _scrollCtrl;
+
+  // Per-slot haptic tracking during queue reorder drag.
+  static const _kQueueItemH = 64.0; // vertical: 10 padding + 44 art + 10 padding
+  double? _reorderStartY;
+  int?    _reorderStartIndex;
+  int?    _lastHapticSlot;
+  double? _lastPointerY; // updated by Listener so onReorderStart can read it
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onReorderPointerMove(PointerMoveEvent e) {
+    _lastPointerY = e.position.dy;
+    if (_reorderStartIndex == null || _reorderStartY == null) return;
+    final dy      = e.position.dy - _reorderStartY!;
+    final slot    = (_reorderStartIndex! + (dy / _kQueueItemH).round()).clamp(0, 200);
+    if (slot != _lastHapticSlot) {
+      _lastHapticSlot = slot;
+      HapticFeedback.selectionClick();
+    }
+  }
+
+  void _clearReorderState() {
+    _reorderStartY     = null;
+    _reorderStartIndex = null;
+    _lastHapticSlot    = null;
+  }
+
+  void _showOptions(BuildContext context) {
+    final item     = widget.item;
     final albumId  = item.extras?['albumId']  as String?;
     final artistId = item.extras?['artistId'] as String?;
-    // Capture router before any navigation; GoRouter is app-lifetime stable.
-    final router = GoRouter.of(context);
+    final router   = GoRouter.of(context);
 
     showModalBottomSheet(
       context: context,
@@ -435,7 +522,7 @@ class _Content extends ConsumerWidget {
       useRootNavigator: false,
       builder: (sheetCtx) => Container(
         decoration: BoxDecoration(
-          color: theme.surface,
+          color: widget.theme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -455,13 +542,12 @@ class _Content extends ConsumerWidget {
                 leading: SvgPicture.string(
                   _kAlbumSvg,
                   width: 24, height: 24,
-                  colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+                  colorFilter: ColorFilter.mode(widget.theme.accentBright, BlendMode.srcIn),
                 ),
                 title: Text('Go to Album',
-                    style: TextStyle(color: theme.textColor)),
+                    style: TextStyle(color: widget.theme.textColor)),
                 onTap: () {
                   Navigator.pop(sheetCtx);
-                  // Dismiss the player and show the mini player on the album screen.
                   ref.read(playerOpenProvider.notifier).state = false;
                   router.go(
                     '/album/$albumId'
@@ -475,10 +561,10 @@ class _Content extends ConsumerWidget {
                 leading: SvgPicture.string(
                   _kArtistSvg,
                   width: 24, height: 24,
-                  colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+                  colorFilter: ColorFilter.mode(widget.theme.accentBright, BlendMode.srcIn),
                 ),
                 title: Text('Go to Artist',
-                    style: TextStyle(color: theme.textColor)),
+                    style: TextStyle(color: widget.theme.textColor)),
                 onTap: () async {
                   Navigator.pop(sheetCtx);
                   ref.read(playerOpenProvider.notifier).state = false;
@@ -504,476 +590,694 @@ class _Content extends ConsumerWidget {
     return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
   }
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final fireMix  = ref.watch(fireMixProvider);
-    final isFired  = fireMix.any((t) => t.id == item.id);
-    final palette  = _GlassButtonPalette.from(ambient);
-
-    return Column(
-      children: [
-        // Top bar: drag handle + options
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              // Invisible spacer to balance the options button
-              const SizedBox(width: 48),
-              // Centered drag-down handle pill
-              Expanded(
-                child: Center(
-                  child: Container(
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(0x44),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
+  Widget _buildTopBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          const SizedBox(width: 48),
+          Expanded(
+            child: Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(0x44),
+                  borderRadius: BorderRadius.circular(2),
                 ),
-              ),
-              IconButton(
-                icon: Icon(Icons.more_horiz,
-                    color: Colors.white.withAlpha(0xBB)),
-                onPressed: () => _showOptions(context, ref, item, theme),
-              ),
-            ],
-          ),
-        ),
-
-        // Album art — expands to fill available vertical space
-        Expanded(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // Use the smaller of available width or height so the square
-                  // fills the space properly on both phones and wide desktop windows
-                  final size = min(constraints.maxWidth, constraints.maxHeight)
-                      .clamp(100.0, 520.0);
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Outer atmospheric bloom — wide soft halo, artwork as light source
-                      Container(
-                        width: size * 1.85,
-                        height: size * 1.85,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              ambient.playButtonColor.withAlpha(0x44),
-                              ambient.playButtonColor.withAlpha(0),
-                            ],
-                            stops: const [0.3, 1.0],
-                          ),
-                        ),
-                      ),
-                      // Inner tight bloom — bright aura hugging the art edges
-                      Container(
-                        width: size * 1.18,
-                        height: size * 1.18,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              ambient.playButtonColor.withAlpha(0x77),
-                              ambient.playButtonColor.withAlpha(0),
-                            ],
-                            stops: const [0.35, 1.0],
-                          ),
-                        ),
-                      ),
-                      // Album art with depth shadows + double-tap seek
-                      Container(
-                        width: size, height: size,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: ambient.playButtonColor.withAlpha(0x66),
-                              blurRadius: 60,
-                              spreadRadius: 6,
-                              offset: const Offset(0, 20),
-                            ),
-                            const BoxShadow(
-                              color: Colors.black54,
-                              blurRadius: 24,
-                              offset: Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: _SeekableAlbumArt(
-                          artUrl: artUrl,
-                          size: size,
-                          ambient: ambient,
-                          handler: handler,
-                          theme: theme,
-                        ),
-                      ),
-                    ],
-                  );
-                },
               ),
             ),
           ),
-        ),
-
-        // Controls panel — subtly elevated surface in the dark zone below the art.
-        // The rounded top + dark fill creates a physical separation from the glow.
-        Container(
-          decoration: const BoxDecoration(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            color: Color(0x1A000000),
+          IconButton(
+            icon: Icon(Icons.more_horiz, color: Colors.white.withAlpha(0xBB)),
+            onPressed: () => _showOptions(context),
           ),
-          padding: const EdgeInsets.fromLTRB(28, 20, 28, 12),
-          child: StreamBuilder<PlaybackState>(
-            stream: handler.playbackState,
-            builder: (context, statSnap) {
-              final isPlaying = statSnap.data?.playing ?? false;
-              return StreamBuilder<Duration>(
-                stream: handler.positionStream,
-                builder: (context, posSnap) {
-                  final pos = posSnap.data ?? Duration.zero;
-                  final dur = handler.duration
-                      ?? item.duration
-                      ?? Duration.zero;
-                  final progress = dur.inMilliseconds > 0
-                      ? (pos.inMilliseconds / dur.inMilliseconds)
-                            .clamp(0.0, 1.0)
-                            .toDouble()
-                      : 0.0;
+        ],
+      ),
+    );
+  }
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildControlsPanel(
+      BuildContext context, bool isFired, _GlassButtonPalette palette) {
+    final item    = widget.item;
+    final handler = widget.handler;
+    final ambient = widget.ambient;
+
+    return Container(
+      decoration: const BoxDecoration(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        color: Color(0x1A000000),
+      ),
+      padding: const EdgeInsets.fromLTRB(28, 20, 28, 12),
+      child: StreamBuilder<PlaybackState>(
+        stream: handler.playbackState,
+        builder: (context, statSnap) {
+          final isPlaying = statSnap.data?.playing ?? false;
+          return StreamBuilder<Duration>(
+            stream: handler.positionStream,
+            builder: (context, posSnap) {
+              final pos      = posSnap.data ?? Duration.zero;
+              final dur      = handler.duration ?? item.duration ?? Duration.zero;
+              final progress = dur.inMilliseconds > 0
+                  ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0).toDouble()
+                  : 0.0;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      // Track title + like button
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w700,
-                                    shadows: [
-                                      Shadow(
-                                        color: ambient.playButtonColor.withAlpha(0x55),
-                                        blurRadius: 16,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  item.artist ?? '',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: ambient.waveformActive,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              isFired ? Icons.whatshot : Icons.whatshot_outlined,
-                              color: isFired
-                                  ? const Color(0xFFFF6B1A) // always orange flame
-                                  : Colors.white.withAlpha(0x55),
-                              size: 26,
-                            ),
-                            onPressed: () {
-                              final extras = item.extras ?? {};
-                              final track = VibeTrack(
-                                id:         item.id,
-                                url:        extras['url'] as String?
-                                                ?? JellyfinApi.streamUrl(item.id),
-                                title:      item.title,
-                                artist:     item.artist ?? '',
-                                album:      item.album ?? '',
-                                albumId:    extras['albumId'] as String?,
-                                artworkUrl: item.artUri?.toString() ?? '',
-                                colorUrl:   extras['colorUrl'] as String? ?? '',
-                                blurHash:   extras['blurHash'] as String?,
-                                duration:   item.duration ?? Duration(
-                                  microseconds: extras['durationMicros'] as int? ?? 0,
-                                ),
-                                raw:        {},
-                              );
-                              ref.read(fireMixProvider.notifier).toggle(track);
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Waveform seek bar
-                      _WaveformSeekBar(
-                        progress: progress,
-                        trackId: item.id,
-                        colorAnchor: ambient.waveformAnchor,
-                        colorMid:    ambient.playButtonColor,
-                        colorEnd:    ambient.waveformActive,
-                        colorTail:   ambient.waveformTail,
-                        inactiveColor: ambient.waveformInactive,
-                        onSeek: (ratio) => handler.seek(Duration(
-                          milliseconds: (ratio * dur.inMilliseconds).round(),
-                        )),
-                      ),
-
-                      // Timestamps
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(_fmt(pos),
-                                style: TextStyle(
-                                    color: Colors.white.withAlpha(0x88),
-                                    fontSize: 12)),
-                            Text(_fmt(dur),
-                                style: TextStyle(
-                                    color: Colors.white.withAlpha(0x88),
-                                    fontSize: 12)),
+                            Text(
+                              item.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                shadows: [
+                                  Shadow(
+                                    color: ambient.playButtonColor.withAlpha(0x55),
+                                    blurRadius: 16,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              item.artist ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: ambient.waveformActive,
+                                fontSize: 15,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 20),
-
-                      // Single transport row: shuffle | prev | play | next | repeat
-                      // Prev/next/shuffle/repeat are bare icons (Spotify-style).
-                      // Only the play button keeps the glass material.
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          StreamBuilder<bool>(
-                            stream: handler.shuffleModeEnabledStream,
-                            builder: (_, snap) {
-                              final on = snap.data ?? false;
-                              return _PlainIconButton(
-                                icon: Icons.shuffle_rounded,
-                                iconSize: 22,
-                                active: on,
-                                inactiveColor: Color.lerp(Colors.white, ambient.waveformActive, 0.08)!.withAlpha(0xBB),
-                                activeColor: ambient.waveformActive,
-                                onTap: () => handler.setShuffleMode(
-                                  on ? AudioServiceShuffleMode.none : AudioServiceShuffleMode.all,
-                                ),
-                              );
-                            },
-                          ),
-                          _PlainIconButton(
-                            icon: Icons.skip_previous_rounded,
-                            iconSize: 30,
-                            inactiveColor: Colors.white.withAlpha(0xDD),
-                            activeColor: ambient.waveformActive,
-                            onTap: handler.skipToPrevious,
-                          ),
-                          _GlassTransportButton(
-                            icon: Icons.play_arrow_rounded,
-                            size: 72, iconSize: 34,
-                            intensity: 1.0,
-                            palette: palette,
-                            customIcon: isPlaying ? const _ThinPauseIcon(height: 20) : null,
-                            onTap: () => isPlaying ? handler.pause() : handler.play(),
-                          ),
-                          _PlainIconButton(
-                            icon: Icons.skip_next_rounded,
-                            iconSize: 30,
-                            inactiveColor: Colors.white.withAlpha(0xDD),
-                            activeColor: ambient.waveformActive,
-                            onTap: handler.skipToNext,
-                          ),
-                          StreamBuilder<LoopMode>(
-                            stream: handler.loopModeStream,
-                            builder: (_, snap) {
-                              final loop = snap.data ?? LoopMode.off;
-                              return _PlainIconButton(
-                                icon: loop == LoopMode.one
-                                    ? Icons.repeat_one_rounded
-                                    : Icons.repeat_rounded,
-                                iconSize: 22,
-                                active: loop != LoopMode.off,
-                                inactiveColor: Color.lerp(Colors.white, ambient.waveformActive, 0.08)!.withAlpha(0xBB),
-                                activeColor: ambient.waveformActive,
-                                onTap: () => handler.setRepeatMode(switch (loop) {
-                                  LoopMode.off => AudioServiceRepeatMode.all,
-                                  LoopMode.all => AudioServiceRepeatMode.one,
-                                  _            => AudioServiceRepeatMode.none,
-                                }),
-                              );
-                            },
-                          ),
-                        ],
+                      IconButton(
+                        icon: Icon(
+                          isFired ? Icons.whatshot : Icons.whatshot_outlined,
+                          color: isFired
+                              ? const Color(0xFFFF6B1A)
+                              : Colors.white.withAlpha(0x55),
+                          size: 26,
+                        ),
+                        onPressed: () {
+                          final extras = item.extras ?? {};
+                          final track = VibeTrack(
+                            id:         item.id,
+                            url:        extras['url'] as String?
+                                            ?? JellyfinApi.streamUrl(item.id),
+                            title:      item.title,
+                            artist:     item.artist ?? '',
+                            album:      item.album ?? '',
+                            albumId:    extras['albumId'] as String?,
+                            artworkUrl: item.artUri?.toString() ?? '',
+                            colorUrl:   extras['colorUrl'] as String? ?? '',
+                            blurHash:   extras['blurHash'] as String?,
+                            duration:   item.duration ?? Duration(
+                              microseconds: extras['durationMicros'] as int? ?? 0,
+                            ),
+                            raw: {},
+                          );
+                          ref.read(fireMixProvider.notifier).toggle(track);
+                        },
                       ),
-                      const SizedBox(height: 4),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
 
-                      // Queue icon — right-aligned below transport
-                      _SecondaryControls(handler: handler, theme: theme),
+                  _WaveformSeekBar(
+                    progress:      progress,
+                    trackId:       item.id,
+                    colorAnchor:   ambient.waveformAnchor,
+                    colorMid:      ambient.playButtonColor,
+                    colorEnd:      ambient.waveformActive,
+                    colorTail:     ambient.waveformTail,
+                    inactiveColor: ambient.waveformInactive,
+                    onSeek: (ratio) => handler.seek(Duration(
+                      milliseconds: (ratio * dur.inMilliseconds).round(),
+                    )),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_fmt(pos),
+                            style: TextStyle(
+                                color: Colors.white.withAlpha(0x88), fontSize: 12)),
+                        Text(_fmt(dur),
+                            style: TextStyle(
+                                color: Colors.white.withAlpha(0x88), fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      StreamBuilder<bool>(
+                        stream: handler.shuffleModeEnabledStream,
+                        builder: (_, snap) {
+                          final on = snap.data ?? false;
+                          return _PlainIconButton(
+                            icon: Icons.shuffle_rounded,
+                            iconSize: 22,
+                            active: on,
+                            inactiveColor: Color.lerp(
+                                    Colors.white, ambient.waveformActive, 0.08)!
+                                .withAlpha(0xBB),
+                            activeColor: ambient.waveformActive,
+                            onTap: () => handler.setShuffleMode(
+                              on
+                                  ? AudioServiceShuffleMode.none
+                                  : AudioServiceShuffleMode.all,
+                            ),
+                          );
+                        },
+                      ),
+                      _PlainIconButton(
+                        icon: Icons.skip_previous_rounded,
+                        iconSize: 30,
+                        inactiveColor: Colors.white.withAlpha(0xDD),
+                        activeColor: ambient.waveformActive,
+                        onTap: handler.skipToPrevious,
+                      ),
+                      _GlassTransportButton(
+                        icon: Icons.play_arrow_rounded,
+                        size: 72, iconSize: 34,
+                        intensity: 1.0,
+                        palette: palette,
+                        customIcon: isPlaying ? const _ThinPauseIcon(height: 20) : null,
+                        onTap: () => isPlaying ? handler.pause() : handler.play(),
+                      ),
+                      _PlainIconButton(
+                        icon: Icons.skip_next_rounded,
+                        iconSize: 30,
+                        inactiveColor: Colors.white.withAlpha(0xDD),
+                        activeColor: ambient.waveformActive,
+                        onTap: handler.skipToNext,
+                      ),
+                      StreamBuilder<LoopMode>(
+                        stream: handler.loopModeStream,
+                        builder: (_, snap) {
+                          final loop = snap.data ?? LoopMode.off;
+                          return _PlainIconButton(
+                            icon: loop == LoopMode.one
+                                ? Icons.repeat_one_rounded
+                                : Icons.repeat_rounded,
+                            iconSize: 22,
+                            active: loop != LoopMode.off,
+                            inactiveColor: Color.lerp(
+                                    Colors.white, ambient.waveformActive, 0.08)!
+                                .withAlpha(0xBB),
+                            activeColor: ambient.waveformActive,
+                            onTap: () => handler.setRepeatMode(switch (loop) {
+                              LoopMode.off => AudioServiceRepeatMode.all,
+                              LoopMode.all => AudioServiceRepeatMode.one,
+                              _            => AudioServiceRepeatMode.none,
+                            }),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildQueueList() {
+    final handler = widget.handler;
+    final theme   = widget.theme;
+
+    return StreamBuilder<List<MediaItem>>(
+      stream: handler.queue,
+      builder: (context, queueSnap) {
+        return StreamBuilder<MediaItem?>(
+          stream: handler.mediaItem,
+          builder: (context, mediaSnap) {
+            final currentId = mediaSnap.data?.id;
+            final allTracks = queueSnap.data ?? handler.queue.value;
+            final tracks    = allTracks.take(30).toList();
+
+            return Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerMove: _onReorderPointerMove,
+              onPointerUp:     (_) => _clearReorderState(),
+              onPointerCancel: (_) => _clearReorderState(),
+              child: ReorderableListView.builder(
+                scrollController: _scrollCtrl,
+                itemCount: tracks.length,
+                onReorderStart: (index) {
+                  HapticFeedback.mediumImpact();
+                  _reorderStartIndex = index;
+                  _reorderStartY     = _lastPointerY;
+                  _lastHapticSlot    = index;
+                },
+                onReorderItem: (oldIndex, newIndex) {
+                  HapticFeedback.lightImpact();
+                  handler.reorderQueue(oldIndex, newIndex);
+                },
+                proxyDecorator: (child, index, animation) => Material(
+                  color: Colors.white.withAlpha(0x10),
+                  borderRadius: BorderRadius.circular(8),
+                  child: child,
+                ),
+                itemBuilder: (context, index) {
+                  final track     = tracks[index];
+                  final isCurrent = track.id == currentId;
+                  return _QueueItem(
+                    key:       ValueKey('${track.id}_$index'),
+                    track:     track,
+                    isCurrent: isCurrent,
+                    theme:     theme,
+                    onTap:     () => handler.skipToQueueItem(index),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildQueueHint(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => widget.expansion.animateTo(1.0,
+          curve: Curves.easeOutCubic,
+          duration: const Duration(milliseconds: 320)),
+      child: SizedBox(
+        height: _kQueueHintH,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(0x33),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 9),
+            Text(
+              'ViBE Queue',
+              style: TextStyle(
+                color: Colors.white.withAlpha(0x66),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fireMix = ref.watch(fireMixProvider);
+    final isFired = fireMix.any((t) => t.id == widget.item.id);
+    final palette = _GlassButtonPalette.from(widget.ambient);
+
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final totalH    = constraints.maxHeight;
+        final totalW    = constraints.maxWidth;
+        final artAreaH  = (totalH - _kTopBarH - _kControlsPanelH - _kQueueHintH)
+            .clamp(100.0, double.infinity);
+        final artFullSz = min(totalW - 48.0, artAreaH).clamp(100.0, 520.0);
+        final artFullL  = (totalW - artFullSz) / 2;
+        final artFullT  = _kTopBarH + (artAreaH - artFullSz) / 2;
+
+        return AnimatedBuilder(
+                animation: widget.expansion,
+                builder: (ctx, _) {
+                  final t = widget.expansion.value;
+                  const artCompactT = (_kCompactHeaderH - _kArtCompact) / 2;
+                  final artSz     = lerpDouble(artFullSz, _kArtCompact, t)!;
+                  final artL      = lerpDouble(artFullL,  _kArtCompactLeft, t)!;
+                  final artT      = lerpDouble(artFullT,  artCompactT, t)!;
+                  final artRadius = lerpDouble(16.0, 8.0, t)!;
+
+                  final bloomOpacity   = (1.0 - t * 3.0).clamp(0.0, 1.0);
+                  final fullOpacity    = (1.0 - t * 2.0).clamp(0.0, 1.0);
+                  final compactOpacity = ((t - 0.3) / 0.7).clamp(0.0, 1.0);
+
+                  final shadowAlpha = lerpDouble(0x66, 0x22, t)!.round().clamp(0, 255);
+
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+
+                      // ── [A] Full player (top bar lives here, hidden in queue mode) ──
+                      Positioned.fill(
+                        child: Opacity(
+                          opacity: fullOpacity,
+                          child: IgnorePointer(
+                            ignoring: t > 0.3,
+                            child: Column(
+                              children: [
+                                _buildTopBar(context),
+                                Expanded(
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    alignment: Alignment.center,
+                                    children: [
+                                      if (bloomOpacity > 0.01) ...[
+                                        Opacity(
+                                          opacity: bloomOpacity,
+                                          child: Container(
+                                            width:  artFullSz * 1.85,
+                                            height: artFullSz * 1.85,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              gradient: RadialGradient(
+                                                colors: [
+                                                  widget.ambient.playButtonColor.withAlpha(0x44),
+                                                  widget.ambient.playButtonColor.withAlpha(0),
+                                                ],
+                                                stops: const [0.3, 1.0],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Opacity(
+                                          opacity: bloomOpacity,
+                                          child: Container(
+                                            width:  artFullSz * 1.18,
+                                            height: artFullSz * 1.18,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              gradient: RadialGradient(
+                                                colors: [
+                                                  widget.ambient.playButtonColor.withAlpha(0x77),
+                                                  widget.ambient.playButtonColor.withAlpha(0),
+                                                ],
+                                                stops: const [0.35, 1.0],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                _buildControlsPanel(context, isFired, palette),
+                                _buildQueueHint(context),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ── [B] Compact header + queue ────────────────────────
+                      Positioned.fill(
+                        child: Opacity(
+                          opacity: compactOpacity,
+                          child: IgnorePointer(
+                            ignoring: t < 0.5,
+                            child: Container(
+                              color: const Color(0xFF0A0A14),
+                              child: Column(
+                                children: [
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onVerticalDragUpdate: widget.onCompactHeaderDragUpdate,
+                                    onVerticalDragEnd:    widget.onCompactHeaderDragEnd,
+                                    child: SizedBox(
+                                      height: _kCompactHeaderH,
+                                      child: Row(
+                                        children: [
+                                          // Spacer for [C] art widget
+                                          const SizedBox(
+                                              width: _kArtCompactLeft + _kArtCompact + 12),
+                                          // Title + artist
+                                          Expanded(
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  widget.item.title,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  widget.item.artist ?? '',
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: Colors.white.withAlpha(0x99),
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          // Prev
+                                          _PlainIconButton(
+                                            icon: Icons.skip_previous_rounded,
+                                            iconSize: 26,
+                                            inactiveColor: Colors.white.withAlpha(0xDD),
+                                            activeColor: widget.ambient.waveformActive,
+                                            onTap: widget.handler.skipToPrevious,
+                                          ),
+                                          // Play / Pause
+                                          StreamBuilder<PlaybackState>(
+                                            stream: widget.handler.playbackState,
+                                            builder: (ctx, snap) {
+                                              final playing = snap.data?.playing ?? false;
+                                              return _PlainIconButton(
+                                                icon: playing
+                                                    ? Icons.pause_rounded
+                                                    : Icons.play_arrow_rounded,
+                                                iconSize: 28,
+                                                inactiveColor: Colors.white.withAlpha(0xDD),
+                                                activeColor: Colors.white,
+                                                onTap: () => playing
+                                                    ? widget.handler.pause()
+                                                    : widget.handler.play(),
+                                              );
+                                            },
+                                          ),
+                                          // Next
+                                          _PlainIconButton(
+                                            icon: Icons.skip_next_rounded,
+                                            iconSize: 26,
+                                            inactiveColor: Colors.white.withAlpha(0xDD),
+                                            activeColor: widget.ambient.waveformActive,
+                                            onTap: widget.handler.skipToNext,
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const Divider(color: Colors.white12, height: 1),
+                                  // ViBE Queue header
+                                  StreamBuilder<List<MediaItem>>(
+                                    stream: widget.handler.queue,
+                                    builder: (ctx, snap) {
+                                      final count =
+                                          (snap.data ?? widget.handler.queue.value).length;
+                                      return Padding(
+                                        padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+                                        child: Row(
+                                          children: [
+                                            const Text(
+                                              'ViBE Queue',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              '$count songs',
+                                              style: TextStyle(
+                                                color: Colors.white.withAlpha(0x66),
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  Expanded(
+                                    child: RepaintBoundary(child: _buildQueueList()),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ── [C] Real art — lerped position/size ───────────────
+                      Positioned(
+                        left:   artL,
+                        top:    artT,
+                        width:  artSz,
+                        height: artSz,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(artRadius),
+                            boxShadow: [
+                              BoxShadow(
+                                color: widget.ambient.playButtonColor
+                                    .withAlpha(shadowAlpha),
+                                blurRadius:   lerpDouble(60, 10, t)!,
+                                spreadRadius: lerpDouble(6,  0,  t)!,
+                                offset: Offset(0, lerpDouble(20, 4, t)!),
+                              ),
+                              BoxShadow(
+                                color:      Colors.black54,
+                                blurRadius: lerpDouble(24, 8, t)!,
+                                offset:     Offset(0, lerpDouble(8, 2, t)!),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(artRadius),
+                            child: _SeekableAlbumArt(
+                              artUrl:  widget.artUrl,
+                              size:    artSz,
+                              ambient: widget.ambient,
+                              handler: widget.handler,
+                              theme:   widget.theme,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   );
                 },
               );
             },
-          ),
-        ),
-      ],
-    );
+          );
   }
 }
 
-// ── Queue button row (right-aligned, below transport) ───────────────────────
-class _SecondaryControls extends StatelessWidget {
-  final VibeAudioHandler handler;
-  final VibeTheme        theme;
+// ── Single queue row ────────────────────────────────────────────────────────
+class _QueueItem extends StatelessWidget {
+  final MediaItem    track;
+  final bool         isCurrent;
+  final VibeTheme    theme;
+  final VoidCallback onTap;
 
-  const _SecondaryControls({required this.handler, required this.theme});
+  const _QueueItem({
+    super.key,
+    required this.track,
+    required this.isCurrent,
+    required this.theme,
+    required this.onTap,
+  });
+
+  static String _fmtDuration(Duration? d) {
+    if (d == null || d.inSeconds == 0) return '';
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        IconButton(
-          icon: Icon(Icons.queue_music_rounded,
-              color: Colors.white.withAlpha(0x77), size: 22),
-          onPressed: () => showModalBottomSheet(
-            context: context,
-            backgroundColor: Colors.transparent,
-            isScrollControlled: true,
-            builder: (_) => _QueueSheet(handler: handler, theme: theme),
+    return Material(
+      color: isCurrent ? Colors.white.withAlpha(0x0F) : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Stack(
+                  children: [
+                    if (track.artUri != null)
+                      CachedNetworkImage(
+                        imageUrl: track.artUri.toString(),
+                        width: 44, height: 44,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, _, _) =>
+                            Container(width: 44, height: 44, color: theme.surface),
+                      )
+                    else
+                      Container(width: 44, height: 44, color: theme.surface),
+                    if (isCurrent)
+                      Container(
+                        width: 44, height: 44,
+                        color: Colors.black.withAlpha(0x88),
+                        child: Center(
+                          child: _AnimatedEqualizer(color: theme.accentBright),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      track.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isCurrent ? theme.accentBright : Colors.white,
+                        fontWeight:
+                            isCurrent ? FontWeight.w700 : FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      [
+                        if (track.artist?.isNotEmpty == true) track.artist!,
+                        _fmtDuration(track.duration),
+                      ].where((s) => s.isNotEmpty).join(' • '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withAlpha(0x77),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
         ),
-      ],
-    );
-  }
-}
-
-// ── Queue bottom sheet ──────────────────────────────────────────────────────
-class _QueueSheet extends StatelessWidget {
-  final VibeAudioHandler handler;
-  final VibeTheme        theme;
-  const _QueueSheet({required this.handler, required this.theme});
-
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.92,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: StreamBuilder<MediaItem?>(
-            stream: handler.mediaItem,
-            builder: (context, mediaSnap) {
-              final currentId = mediaSnap.data?.id;
-              final tracks = handler.queue.value;
-
-              return Column(
-                children: [
-                  // Drag handle
-                  Container(
-                    margin: const EdgeInsets.symmetric(vertical: 12),
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(0x44),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  // Header
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                    child: Row(
-                      children: [
-                        Text(
-                          'Up Next',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${tracks.length} tracks',
-                          style: TextStyle(
-                            color: Colors.white.withAlpha(0x66),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(color: Colors.white12, height: 1),
-                  // Track list
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      itemCount: tracks.length,
-                      itemBuilder: (context, i) {
-                        final track = tracks[i];
-                        final isCurrent = track.id == currentId;
-                        return Material(
-                          color: Colors.transparent,
-                          child: ListTile(
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: track.artUri != null
-                                ? CachedNetworkImage(
-                                    imageUrl: track.artUri.toString(),
-                                    width: 44, height: 44,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, _, _) =>
-                                        Container(width: 44, height: 44, color: theme.background),
-                                  )
-                                : Container(width: 44, height: 44, color: theme.background),
-                          ),
-                          title: Text(
-                            track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: isCurrent ? theme.accentBright : Colors.white,
-                              fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400,
-                            ),
-                          ),
-                          subtitle: Text(
-                            track.artist ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.white.withAlpha(0x66), fontSize: 13),
-                          ),
-                          trailing: isCurrent
-                              ? _AnimatedEqualizer(color: theme.accentBright)
-                              : null,
-                          onTap: () {
-                            handler.skipToQueueItem(i);
-                            Navigator.pop(context);
-                          },
-                        ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
+      ),
     );
   }
 }
@@ -993,12 +1297,16 @@ class _AnimatedEqualizerState extends State<_AnimatedEqualizer>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat();
+    _ctrl = AnimationController(
+            vsync: this, duration: const Duration(milliseconds: 900))
+        ..repeat();
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1031,11 +1339,6 @@ class _AnimatedEqualizerState extends State<_AnimatedEqualizer>
 }
 
 // ── Glass button palette ─────────────────────────────────────────────────────
-// Three-tone color set from AmbientTheme. Using three distinct tones instead of
-// one color is what makes the glass read as a colored crystal rather than a tint.
-//   core      = vibrant (deepest, most saturated hue — the primary light source)
-//   mid       = interpolated midpoint (interior depth / color transition)
-//   highlight = lightVibrant (surface brightness, rim catch, wide glow)
 class _GlassButtonPalette {
   final Color core;
   final Color mid;
@@ -1055,13 +1358,6 @@ class _GlassButtonPalette {
 }
 
 // ── Album-gradient play button ──────────────────────────────────────────────
-// Bold, album-driven color button. The album IS the button.
-// 4-layer model:
-//   1. Room glow    — 3 BoxShadow halos (core / mid / highlight)
-//   2. Gradient body — diagonal LinearGradient: highlight → core → deep anchor
-//   3. Center bloom  — radial white overlay for perceived depth / lit-from-within
-//   4. Bottom shadow — subtle darkening for volume
-//   5. Icon          — pure white, crisp
 class _GlassTransportButton extends StatelessWidget {
   final IconData            icon;
   final double              size;
@@ -1083,15 +1379,12 @@ class _GlassTransportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Deep anchor: darkens palette toward black for gradient contrast at edge
     final Color dark = Color.lerp(palette.core, Colors.black, 0.42)!;
 
-    // Room glow halos — three palette tones at expanding radii
     final int gA1 = (0x55 * intensity).round().clamp(0, 255);
     final int gA2 = (0x33 * intensity).round().clamp(0, 255);
     final int gA3 = (0x1A * intensity).round().clamp(0, 255);
 
-    // Gradient circle slightly inset from tap target — breathing room around icon
     final double gradSize = size * 0.62;
 
     return GestureDetector(
@@ -1102,8 +1395,6 @@ class _GlassTransportButton extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
-
-            // ── Room glow ───────────────────────────────────────────────
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -1129,10 +1420,6 @@ class _GlassTransportButton extends StatelessWidget {
                 ),
               ),
             ),
-
-            // ── Gradient body ────────────────────────────────────────────
-            // Diagonal sweep: lightVibrant (top-left) → vibrant → deep anchor (bottom-right).
-            // Three distinct palette tones — every album produces a unique combination.
             SizedBox(
               width: gradSize, height: gradSize,
               child: DecoratedBox(
@@ -1147,10 +1434,6 @@ class _GlassTransportButton extends StatelessWidget {
                 ),
               ),
             ),
-
-            // ── Center bloom ─────────────────────────────────────────────
-            // Soft white at center creates a "lit from within" depth — the button
-            // reads as a light source, not a flat disc.
             IgnorePointer(
               child: SizedBox(
                 width: gradSize, height: gradSize,
@@ -1165,9 +1448,6 @@ class _GlassTransportButton extends StatelessWidget {
                 ),
               ),
             ),
-
-            // ── Bottom depth shadow ──────────────────────────────────────
-            // Darkens the lower edge to give the button perceived curvature.
             IgnorePointer(
               child: SizedBox(
                 width: gradSize, height: gradSize,
@@ -1184,8 +1464,6 @@ class _GlassTransportButton extends StatelessWidget {
                 ),
               ),
             ),
-
-            // ── Icon ─────────────────────────────────────────────────────
             customIcon ?? Icon(icon, color: Colors.white, size: iconSize),
           ],
         ),
@@ -1195,15 +1473,14 @@ class _GlassTransportButton extends StatelessWidget {
 }
 
 // ── Thin pause bars ─────────────────────────────────────────────────────────
-// Custom pause icon with slim rounded bars — thinner than any Material icon.
 class _ThinPauseIcon extends StatelessWidget {
   final double height;
   const _ThinPauseIcon({this.height = 20});
 
   @override
   Widget build(BuildContext context) {
-    final barW = (height * 0.16).clamp(2.5, 4.0);
-    final gap  = height * 0.30;
+    final barW   = (height * 0.16).clamp(2.5, 4.0);
+    final gap    = height * 0.30;
     final radius = Radius.circular(barW / 2);
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1229,9 +1506,6 @@ class _ThinPauseIcon extends StatelessWidget {
 }
 
 // ── Plain icon button (no glass) ────────────────────────────────────────────
-// Used for prev, next, shuffle, repeat — Spotify-style: bare icon, no circle.
-// Inactive: near-white with a subtle palette tint so icons feel "of" the album.
-// Active:   full waveformActive (lightVibrant) — state is unmistakable.
 class _PlainIconButton extends StatelessWidget {
   final IconData      icon;
   final double        iconSize;
@@ -1263,7 +1537,7 @@ class _PlainIconButton extends StatelessWidget {
   }
 }
 
-// ── Seekable album art — double-tap left/right for ±10s (Split Bleed) ───────
+// ── Seekable album art — double-tap ±10s + swipe left/right to skip ─────────
 class _SeekableAlbumArt extends StatefulWidget {
   final String?          artUrl;
   final double           size;
@@ -1300,13 +1574,15 @@ class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
     super.initState();
     _posSub = widget.handler.positionStream.listen((p) => _pos = p);
 
-    _bleedCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
-    _labelCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _bleedCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
+    _labelCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
 
     _bleedOpacity = TweenSequence([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0),  weight: 18),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.88), weight: 56),
-      TweenSequenceItem(tween: Tween(begin: 0.88, end: 0.0), weight: 26),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0),   weight: 18),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.88),  weight: 56),
+      TweenSequenceItem(tween: Tween(begin: 0.88, end: 0.0),  weight: 26),
     ]).animate(CurvedAnimation(parent: _bleedCtrl, curve: Curves.easeInOut));
 
     _labelOpacity = TweenSequence([
@@ -1336,9 +1612,9 @@ class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
     final isRight = d.localPosition.dx > widget.size / 2;
     setState(() => _isRight = isRight);
 
-    final delta = Duration(seconds: isRight ? 10 : -10);
+    final delta  = Duration(seconds: isRight ? 10 : -10);
     final maxDur = widget.handler.duration ?? const Duration(hours: 1);
-    var target = _pos + delta;
+    var target   = _pos + delta;
     if (target < Duration.zero) target = Duration.zero;
     if (target > maxDur) target = maxDur;
     widget.handler.seek(target);
@@ -1353,12 +1629,19 @@ class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
 
     return GestureDetector(
       onDoubleTapDown: _onDoubleTap,
+      onHorizontalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v < -400) {
+          widget.handler.skipToNext();
+        } else if (v > 400) {
+          widget.handler.skipToPrevious();
+        }
+      },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Album image
             widget.artUrl != null
                 ? CachedNetworkImage(
                     imageUrl: widget.artUrl!,
@@ -1368,7 +1651,6 @@ class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
                   )
                 : Container(color: widget.theme.surface),
 
-            // Split Bleed overlay
             AnimatedBuilder(
               animation: _bleedCtrl,
               builder: (_, child) => Opacity(
@@ -1390,7 +1672,6 @@ class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
               ),
             ),
 
-            // Seek label
             AnimatedBuilder(
               animation: _labelCtrl,
               builder: (_, child) => Opacity(
@@ -1408,7 +1689,10 @@ class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
                         letterSpacing: -0.5,
                         shadows: [
                           Shadow(color: accentColor, blurRadius: 24),
-                          const Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2)),
+                          const Shadow(
+                              color: Colors.black54,
+                              blurRadius: 10,
+                              offset: Offset(0, 2)),
                         ],
                       ),
                     ),
@@ -1425,7 +1709,7 @@ class _SeekableAlbumArtState extends State<_SeekableAlbumArt>
 
 // ── Waveform seek bar ───────────────────────────────────────────────────────
 class _WaveformSeekBar extends StatefulWidget {
-  final double progress; // 0.0 – 1.0
+  final double progress;
   final String trackId;
   final Color  colorAnchor;
   final Color  colorMid;
@@ -1450,7 +1734,7 @@ class _WaveformSeekBar extends StatefulWidget {
 }
 
 class _WaveformSeekBarState extends State<_WaveformSeekBar> {
-  double? _drag; // local drag position; null = use widget.progress
+  double? _drag;
 
   double _ratio(Offset globalPos) {
     final box = context.findRenderObject() as RenderBox?;
@@ -1464,9 +1748,15 @@ class _WaveformSeekBarState extends State<_WaveformSeekBar> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (d) => widget.onSeek(_ratio(d.globalPosition)),
-      onHorizontalDragUpdate: (d) => setState(() => _drag = _ratio(d.globalPosition)),
-      onHorizontalDragEnd:    (_) { if (_drag != null) { widget.onSeek(_drag!); setState(() => _drag = null); } },
-      onHorizontalDragCancel: ()  => setState(() => _drag = null),
+      onHorizontalDragUpdate: (d) =>
+          setState(() => _drag = _ratio(d.globalPosition)),
+      onHorizontalDragEnd: (_) {
+        if (_drag != null) {
+          widget.onSeek(_drag!);
+          setState(() => _drag = null);
+        }
+      },
+      onHorizontalDragCancel: () => setState(() => _drag = null),
       child: SizedBox(
         height: 56,
         width: double.infinity,
@@ -1488,10 +1778,10 @@ class _WaveformSeekBarState extends State<_WaveformSeekBar> {
 
 class _WaveformPainter extends CustomPainter {
   final double progress;
-  final Color  colorAnchor;  // darkVibrant — deep start
-  final Color  colorMid;     // vibrant — main energy
-  final Color  colorEnd;     // lightVibrant — bright bloom
-  final Color  colorTail;    // muted — soft resolution
+  final Color  colorAnchor;
+  final Color  colorMid;
+  final Color  colorEnd;
+  final Color  colorTail;
   final Color  inactiveColor;
 
   static final Map<Key, List<double>> _heightCache = {};
@@ -1514,7 +1804,6 @@ class _WaveformPainter extends CustomPainter {
     });
   }
 
-  // 4-stop gradient: anchor → mid → end → tail, mapped across 0.0–1.0
   Color _gradientAt(double t) {
     if (t < 0.33) {
       return Color.lerp(colorAnchor, colorMid, t / 0.33)!;
@@ -1527,10 +1816,10 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const barCount  = 55;
-    const gap       = 2.5;
-    final barW      = (size.width - (barCount - 1) * gap) / barCount;
-    final maxH      = size.height;
+    const barCount = 55;
+    const gap      = 2.5;
+    final barW     = (size.width - (barCount - 1) * gap) / barCount;
+    final maxH     = size.height;
     final progressX = progress * size.width;
 
     final cacheKey = Object.hashAll([size.width.round(), barCount]);
@@ -1552,9 +1841,6 @@ class _WaveformPainter extends CustomPainter {
       final isActive = midX <= progressX;
 
       if (isActive) {
-        // 4-stop palette gradient gives each album a color fingerprint.
-        // Height-based brightness: tall bars (loud moments) pull ~14% toward white —
-        // the waveform shape of each track becomes visually encoded in the color.
         final base = _gradientAt(midX / size.width);
         activePaint.color = Color.lerp(base, Colors.white, heights[i] * 0.14)!;
       }
@@ -1571,10 +1857,9 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WaveformPainter old) =>
-      progress     != old.progress     ||
-      colorAnchor  != old.colorAnchor  ||
-      colorMid     != old.colorMid     ||
-      colorEnd     != old.colorEnd     ||
-      colorTail    != old.colorTail;
+      progress    != old.progress    ||
+      colorAnchor != old.colorAnchor ||
+      colorMid    != old.colorMid    ||
+      colorEnd    != old.colorEnd    ||
+      colorTail   != old.colorTail;
 }
-

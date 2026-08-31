@@ -13,6 +13,7 @@ class VibeTrack {
   final String colorUrl;   // 32px thumbnail for fast color extraction
   final String? blurHash;
   final Duration duration;
+  final int?  trackNumber;
   final Map<String, dynamic> raw;
   final bool isAI;
 
@@ -28,6 +29,7 @@ class VibeTrack {
     required this.colorUrl,
     this.blurHash,
     required this.duration,
+    this.trackNumber,
     required this.raw,
     this.isAI = false,
   });
@@ -87,6 +89,7 @@ class VibeTrack {
       colorUrl:    JellyfinApi.colorExtractionUrl(albumId),
       blurHash:    blurHash,
       duration:    Duration(microseconds: (ticks / 10).round()),
+      trackNumber: j['IndexNumber'] as int?,
       raw:         j,
       isAI:        isAI,
     );

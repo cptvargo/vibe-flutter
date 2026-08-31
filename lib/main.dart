@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,8 @@ import 'services/download_service.dart';
 import 'services/offline_playlist_service.dart';
 import 'services/recently_played_service.dart';
 import 'services/last_played_service.dart';
+import 'services/on_deck_service.dart';
+import 'services/vibe_out_service.dart';
 import 'providers.dart';
 
 Future<void> main() async {
@@ -47,6 +50,8 @@ Future<void> main() async {
   await OfflinePlaylistService.init();
   await PaletteService.init();
   await RecentlyPlayedService.init();
+  await OnDeckService.init();
+  VibeOutService.init(); // fire-and-forget — fetches from network, not blocking
 
   final handler = await AudioService.init(
     builder: () => VibeAudioHandler(),
@@ -122,9 +127,19 @@ class VibeApp extends ConsumerWidget {
   }
 }
 
-// Bouncing physics on every platform — the iOS feel we want for a music app
+// Bouncing physics on every platform — the iOS feel we want for a music app.
+// dragDevices includes mouse so click-drag works on Windows/desktop for
+// PageViews, ListViews, etc. (Flutter excludes mouse by default on desktop).
 class _VibeScrollBehavior extends ScrollBehavior {
   const _VibeScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.trackpad,
+  };
 
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) =>

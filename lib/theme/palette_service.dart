@@ -77,10 +77,22 @@ class VibePalette {
     // theme even for monochromatic art (grey album → grey theme, not purple)
     final dominant = g.dominantColor?.color ?? VibePalette.fallback.vibrant;
 
+    // Clamp darkVibrant lightness ≤ 0.35 so achromatic/B&W art never
+    // propagates a near-white value into dark slots, which would make
+    // surface and background near-identical and flip textColor to black.
+    Color clampDark(Color c) {
+      final hsl = HSLColor.fromColor(c);
+      return hsl.lightness > 0.35
+          ? hsl.withLightness(0.35).toColor()
+          : c;
+    }
+
+    final rawDarkVibrant = g.darkVibrantColor?.color ?? g.darkMutedColor?.color ?? dominant;
+
     return VibePalette(
       vibrant:      g.vibrantColor?.color      ?? g.mutedColor?.color     ?? dominant,
       lightVibrant: g.lightVibrantColor?.color ?? g.vibrantColor?.color   ?? dominant,
-      darkVibrant:  g.darkVibrantColor?.color  ?? g.darkMutedColor?.color ?? dominant,
+      darkVibrant:  clampDark(rawDarkVibrant),
       muted:        g.mutedColor?.color        ?? g.darkMutedColor?.color ?? dominant,
       darkMuted:    g.darkMutedColor?.color    ?? g.mutedColor?.color     ?? dominant,
     );
