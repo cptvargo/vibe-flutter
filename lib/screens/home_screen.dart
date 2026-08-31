@@ -18,8 +18,7 @@ import '../widgets/vibe_out_section.dart';
 import '../widgets/vibe_ui.dart';
 import 'mix_detail_screen.dart';
 
-const _kAlbumSize  = 140.0;
-const _kArtistSize = 80.0;
+const _kAlbumSize = 140.0;
 
 // ─── Deck entry ────────────────────────────────────────────────────────────────
 // Lightweight view-model for a single On Deck grid card. Sessions supply a
@@ -52,11 +51,12 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with TickerProviderStateMixin {
 
-  List<_DeckEntry>           _deckEntries  = [];
+  List<_DeckEntry>           _deckEntries       = [];
   AlbumSession?              _topSession;
-  List<Map<String, dynamic>> _recentAlbums = [];
-  List<Map<String, dynamic>> _artists      = [];
-  bool                       _loading      = true;
+  List<Map<String, dynamic>> _recentAlbums      = [];
+  List<Map<String, dynamic>> _artists           = [];
+  List<Map<String, dynamic>> _dailyArtistAlbums = [];
+  bool                       _loading           = true;
   String?                    _error;
 
   StreamSubscription<void>?  _deckSub;
@@ -247,10 +247,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
       artists.shuffle(Random(seed));
 
+      // Fetch the daily artist's albums — sequential after shuffle so we know
+      // which artist is featured today.
+      List<Map<String, dynamic>> dailyAlbums = [];
+      if (artists.isNotEmpty) {
+        final artistId = artists.first['Id'] as String? ?? '';
+        if (artistId.isNotEmpty) {
+          try {
+            final res = await JellyfinApi.getArtistAlbums(artistId);
+            dailyAlbums = ((res['Items'] as List?) ?? [])
+                .cast<Map<String, dynamic>>();
+          } catch (_) {}
+        }
+      }
+
       setState(() {
-        _recentAlbums = (results[0]['Items'] as List? ?? []).cast();
-        _artists      = artists;
-        _loading      = false;
+        _recentAlbums      = (results[0]['Items'] as List? ?? []).cast();
+        _artists           = artists;
+        _dailyArtistAlbums = dailyAlbums;
+        _loading           = false;
       });
       _loadDeckData(); // re-run now that _recentAlbums is populated
       _enterCtrl.forward(from: 0);
@@ -498,68 +513,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ),
                 ),
 
-                // ── Artist Corner ─────────────────────────────────────────────
-                if (_artists.isNotEmpty) ...[
+                // ── Daily Artist ──────────────────────────────────────────────
+                if (_artists.isNotEmpty && _dailyArtistAlbums.isNotEmpty) ...[
                   const SizedBox(height: 28),
-                  VibeFadeSlide(animation: _sec(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Artist Corner',
-                            style: TextStyle(
-                              color:       theme.textColor,
-                              fontSize:    18,
-                              fontWeight:  FontWeight.w700,
-                              letterSpacing: 0.4,
-                              shadows: [
-                                Shadow(color: theme.accent.withAlpha(0xCC), blurRadius: 10),
-                                Shadow(color: theme.accentBright.withAlpha(0x66), blurRadius: 24),
-                              ],
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => context.push('/all-artists'),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('See All',
-                                  style: TextStyle(
-                                    color:      theme.accentBright,
-                                    fontSize:   13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                Icon(Icons.chevron_right_rounded,
-                                    color: theme.accentBright, size: 18),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  VibeFadeSlide(animation: _sec(6),
-                    child: SizedBox(
-                      height: _kArtistSize + 50,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding:        const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount:      _artists.take(5).length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 14),
-                        itemBuilder: (_, i) {
-                          final a = _artists[i];
-                          return VibeArtistCard(
-                            artist: a, theme: theme,
-                            onPress: () => context.push(
-                              '/artist/${a['Id']}?name=${Uri.encodeComponent(a['Name'] as String? ?? '')}',
-                            ),
-                          );
-                        },
-                      ),
+                  VibeFadeSlide(
+                    animation: _sec(6),
+                    child: _DailyArtistSection(
+                      artist:      _artists.first,
+                      albums:      _dailyArtistAlbums,
+                      theme:       theme,
+                      onSeeAll:    () => context.push('/all-artists'),
+                      onArtistTap: () {
+                        final a = _artists.first;
+                        context.push(
+                          '/artist/${a['Id']}'
+                          '?name=${Uri.encodeComponent(a['Name'] as String? ?? '')}',
+                        );
+                      },
+                      onAlbumTap: (a) {
+                        final id     = a['Id']             as String? ?? '';
+                        final name   = a['Name']           as String? ?? '';
+                        final artist = a['AlbumArtist']    as String? ?? '';
+                        final year   = a['ProductionYear'] as int?;
+                        final yParam = year != null ? '&year=$year' : '';
+                        context.push(
+                          '/album/$id'
+                          '?name=${Uri.encodeComponent(name)}'
+                          '&artist=${Uri.encodeComponent(artist)}'
+                          '$yParam',
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -1228,6 +1211,150 @@ class _VibeMixCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Daily Artist section ──────────────────────────────────────────────────────
+
+class _DailyArtistSection extends StatelessWidget {
+  final Map<String, dynamic>            artist;
+  final List<Map<String, dynamic>>      albums;
+  final VibeTheme                       theme;
+  final VoidCallback                    onSeeAll;
+  final VoidCallback                    onArtistTap;
+  final void Function(Map<String, dynamic>) onAlbumTap;
+
+  const _DailyArtistSection({
+    required this.artist,
+    required this.albums,
+    required this.theme,
+    required this.onSeeAll,
+    required this.onArtistTap,
+    required this.onAlbumTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final id   = artist['Id']   as String? ?? '';
+    final name = artist['Name'] as String? ?? '';
+    final tag  = (artist['ImageTags'] as Map?)
+        ?.cast<String, dynamic>()['Primary'] as String?;
+    final imgUrl = id.isNotEmpty
+        ? JellyfinApi.imageUrl(id, type: 'Primary', size: 200, tag: tag)
+        : '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Eyebrow
+              Text(
+                "TODAY'S ARTIST",
+                style: TextStyle(
+                  color:         theme.accent,
+                  fontSize:      11,
+                  fontWeight:    FontWeight.w700,
+                  letterSpacing: 1.4,
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Artist row: avatar + name + See All
+              Row(
+                children: [
+                  // Avatar
+                  GestureDetector(
+                    onTap: onArtistTap,
+                    child: ClipOval(
+                      child: imgUrl.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl:    imgUrl,
+                              width:       48,
+                              height:      48,
+                              fit:         BoxFit.cover,
+                              errorWidget: (_, _, _) => _avatarFallback(),
+                            )
+                          : _avatarFallback(),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Name
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: onArtistTap,
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color:         theme.textColor,
+                          fontSize:      18,
+                          fontWeight:    FontWeight.w700,
+                          letterSpacing: 0.3,
+                          shadows: [
+                            Shadow(color: theme.accent.withAlpha(0xCC), blurRadius: 10),
+                            Shadow(color: theme.accentBright.withAlpha(0x55), blurRadius: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // See All → all-artists
+                  GestureDetector(
+                    onTap: onSeeAll,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'See All',
+                          style: TextStyle(
+                            color:      theme.accentBright,
+                            fontSize:   13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(Icons.chevron_right_rounded,
+                            color: theme.accentBright, size: 18),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        // Albums row
+        SizedBox(
+          height: _kAlbumSize + 72,
+          child: ListView.separated(
+            scrollDirection:  Axis.horizontal,
+            padding:          const EdgeInsets.symmetric(horizontal: 20),
+            itemCount:        albums.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 14),
+            itemBuilder: (_, i) => VibeAlbumCard(
+              item:    albums[i],
+              theme:   theme,
+              onPress: () => onAlbumTap(albums[i]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _avatarFallback() => Container(
+    width:  48,
+    height: 48,
+    decoration: BoxDecoration(
+      color:  theme.surface,
+      shape:  BoxShape.circle,
+    ),
+    child: Icon(Icons.person_rounded, color: theme.textFaint, size: 24),
+  );
 }
 
 // ── Error state ────────────────────────────────────────────────────────────────
