@@ -27,6 +27,43 @@ class DownloadService {
     final docDir = await getApplicationDocumentsDirectory();
     _dir = '${docDir.path}/vibe_downloads';
     await Directory(_dir!).create(recursive: true);
+    await _migrateUnknownExtensions();
+  }
+
+  // Earlier builds saved files as .audio — an extension iOS AVPlayer cannot
+  // identify via UTI lookup, causing silent playback failure. Delete any such
+  // entries so they are re-downloaded with the correct extension.
+  static Future<void> _migrateUnknownExtensions() async {
+    final stale = <String>[
+      for (final key in (_box?.keys ?? []))
+        if (_box?.get(key)?['filePath']?.toString().endsWith('.audio') == true)
+          key as String,
+    ];
+    for (final id in stale) {
+      final data = _box?.get(id);
+      final path = data?['filePath'] as String?;
+      if (path != null) {
+        try { await File(path).delete(); } catch (_) {}
+      }
+      await _box?.delete(id);
+    }
+  }
+
+  // Map the Content-Type MIME type to a file extension that both iOS
+  // (AVPlayer / UTI lookup) and Android (ExoPlayer) can recognise.
+  static String _extForContentType(String? contentType) {
+    if (contentType == null) return '.mp3';
+    final mime = contentType.split(';').first.trim().toLowerCase();
+    return switch (mime) {
+      'audio/mpeg' || 'audio/mp3'                  => '.mp3',
+      'audio/flac' || 'audio/x-flac'               => '.flac',
+      'audio/mp4' || 'audio/x-m4a' || 'video/mp4' => '.m4a',
+      'audio/aac' || 'audio/aacp'                  => '.aac',
+      'audio/ogg' || 'application/ogg'             => '.ogg',
+      'audio/wav' || 'audio/x-wav' || 'audio/wave' => '.wav',
+      'audio/aiff' || 'audio/x-aiff'               => '.aiff',
+      _                                             => '.mp3',
+    };
   }
 
   // ── Status helpers ────────────────────────────────────────────────────────
@@ -115,7 +152,8 @@ class DownloadService {
     _errors.remove(track.id);
     _onChange.add(null);
 
-    final path = '${_dir!}/${track.id}.audio';
+    // path is determined after we know the Content-Type of the response.
+    String? path;
     try {
       // Use the stream URL (same as playback) — it needs no special Download
       // permission and never redirects. Add the Emby auth header because some
@@ -127,6 +165,11 @@ class DownloadService {
       if (res.statusCode != 200) {
         throw Exception('HTTP ${res.statusCode} for track ${track.id}');
       }
+
+      // Derive extension from Content-Type so iOS AVPlayer can identify the
+      // format via UTI lookup on the local file:// URL.
+      final ext = _extForContentType(res.headers.value('content-type'));
+      path = '${_dir!}/${track.id}$ext';
 
       final total    = res.contentLength;
       int   received = 0;
@@ -180,7 +223,9 @@ class DownloadService {
       _activeInfo.remove(track.id);
       _errors[track.id] = e.toString();
       _onChange.add(null);
-      try { await File(path).delete(); } catch (_) {}
+      if (path != null) {
+        try { await File(path).delete(); } catch (_) {}
+      }
     }
   }
 

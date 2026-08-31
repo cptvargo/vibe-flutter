@@ -481,9 +481,14 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
     await _primary.stop();
     await _primary.setVolume(1.0);
-    await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
-    if (startPositionMs > 0) {
-      await _primary.seek(Duration(milliseconds: startPositionMs));
+    try {
+      await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
+      if (startPositionMs > 0) {
+        await _primary.seek(Duration(milliseconds: startPositionMs));
+      }
+    } catch (_) {
+      _loading = false;
+      return;
     }
 
     _reportStarted(item.id);
