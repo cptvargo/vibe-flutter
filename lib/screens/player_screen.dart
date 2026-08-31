@@ -764,9 +764,7 @@ class _ContentState extends ConsumerState<_Content> {
                             icon: Icons.shuffle_rounded,
                             iconSize: 22,
                             active: on,
-                            inactiveColor: Color.lerp(
-                                    Colors.white, ambient.waveformActive, 0.08)!
-                                .withAlpha(0xBB),
+                            inactiveColor: Colors.white,
                             activeColor: ambient.waveformActive,
                             onTap: () => handler.setShuffleMode(
                               on
@@ -779,7 +777,7 @@ class _ContentState extends ConsumerState<_Content> {
                       _PlainIconButton(
                         icon: Icons.skip_previous_rounded,
                         iconSize: 30,
-                        inactiveColor: Colors.white.withAlpha(0xDD),
+                        inactiveColor: Colors.white,
                         activeColor: ambient.waveformActive,
                         onTap: handler.skipToPrevious,
                       ),
@@ -794,7 +792,7 @@ class _ContentState extends ConsumerState<_Content> {
                       _PlainIconButton(
                         icon: Icons.skip_next_rounded,
                         iconSize: 30,
-                        inactiveColor: Colors.white.withAlpha(0xDD),
+                        inactiveColor: Colors.white,
                         activeColor: ambient.waveformActive,
                         onTap: handler.skipToNext,
                       ),
@@ -808,9 +806,7 @@ class _ContentState extends ConsumerState<_Content> {
                                 : Icons.repeat_rounded,
                             iconSize: 22,
                             active: loop != LoopMode.off,
-                            inactiveColor: Color.lerp(
-                                    Colors.white, ambient.waveformActive, 0.08)!
-                                .withAlpha(0xBB),
+                            inactiveColor: Colors.white,
                             activeColor: ambient.waveformActive,
                             onTap: () => handler.setRepeatMode(switch (loop) {
                               LoopMode.off => AudioServiceRepeatMode.all,
