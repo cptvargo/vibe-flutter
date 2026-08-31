@@ -130,11 +130,6 @@ class _MixPickerScreenState extends ConsumerState<MixPickerScreen>
     }
   }
 
-  String get _countLabel {
-    final n = _selected.length;
-    if (widget.isArtist) return n == 1 ? '1 artist selected' : '$n artists selected';
-    return n == 1 ? '1 album selected' : '$n albums selected';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -337,11 +332,12 @@ class _MixPickerScreenState extends ConsumerState<MixPickerScreen>
               sizeFactor: _barAnim,
               axisAlignment: -1,
               child: _PlayBar(
-                label: _countLabel,
-                playing: _playing,
-                theme: theme,
-                botPad: botPad,
-                onPlay: _playMix,
+                selectedItems: _selected.values.toList(),
+                isArtist:      widget.isArtist,
+                playing:       _playing,
+                theme:         theme,
+                botPad:        botPad,
+                onPlay:        _playMix,
               ),
             ),
           ),
@@ -561,14 +557,16 @@ class _AlbumCard extends StatelessWidget {
 
 // ── Floating play bar ────────────────────────────────────────────────────────
 class _PlayBar extends StatelessWidget {
-  final String label;
+  final List<Map<String, dynamic>> selectedItems;
+  final bool isArtist;
   final bool playing;
   final VibeTheme theme;
   final double botPad;
   final VoidCallback onPlay;
 
   const _PlayBar({
-    required this.label,
+    required this.selectedItems,
+    required this.isArtist,
     required this.playing,
     required this.theme,
     required this.botPad,
@@ -578,7 +576,7 @@ class _PlayBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.fromLTRB(20, 16, 20, botPad + 16),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, botPad + 12),
       decoration: BoxDecoration(
         color: const Color(0xFF0C0C1C),
         border: Border(
@@ -593,21 +591,74 @@ class _PlayBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withAlpha(0x88),
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+          // Scrollable selection chips
+          Expanded(
+            child: SizedBox(
+              height: 70,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: selectedItems.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final item = selectedItems[i];
+                  final id   = item['Id']   as String? ?? '';
+                  final name = item['Name'] as String? ?? '';
+                  final tag  = (item['ImageTags'] as Map?)?['Primary'] as String?;
+                  final url  = JellyfinApi.imageUrl(id, size: 100, tag: tag);
+                  final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
+                  final image = isArtist
+                      ? ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: url, width: 44, height: 44, fit: BoxFit.cover,
+                            placeholder: (_, __) => _InitialCircle(initial: initial, theme: theme),
+                            errorWidget: (_, __, ___) => _InitialCircle(initial: initial, theme: theme),
+                          ),
+                        )
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: CachedNetworkImage(
+                            imageUrl: url, width: 44, height: 44, fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(width: 44, height: 44, color: theme.surface),
+                            errorWidget: (_, __, ___) => Container(
+                              width: 44, height: 44, color: theme.surface,
+                              child: Icon(Icons.album, color: theme.textFaint, size: 20),
+                            ),
+                          ),
+                        );
+
+                  return SizedBox(
+                    width: 52,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        image,
+                        const SizedBox(height: 5),
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: theme.accentBright,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 12),
+          // Play Mix button
           GestureDetector(
             onTap: onPlay,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [theme.accent, theme.accentBright],
@@ -626,14 +677,12 @@ class _PlayBar extends StatelessWidget {
               child: playing
                   ? const SizedBox(
                       width: 18, height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
                   : const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.shuffle_rounded,
-                            color: Colors.white, size: 18),
+                        Icon(Icons.shuffle_rounded, color: Colors.white, size: 18),
                         SizedBox(width: 8),
                         Text(
                           'Play Mix',
@@ -652,4 +701,20 @@ class _PlayBar extends StatelessWidget {
       ),
     );
   }
+}
+
+class _InitialCircle extends StatelessWidget {
+  final String initial;
+  final VibeTheme theme;
+  const _InitialCircle({required this.initial, required this.theme});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 44, height: 44,
+    decoration: BoxDecoration(shape: BoxShape.circle, color: theme.surface),
+    child: Center(
+      child: Text(initial,
+        style: TextStyle(color: theme.accent, fontSize: 16, fontWeight: FontWeight.w700)),
+    ),
+  );
 }

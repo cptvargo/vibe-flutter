@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api/jellyfin_models.dart';
 import 'audio/audio_handler.dart';
 import 'services/fire_mix_service.dart';
+import 'services/preset_mix_service.dart';
 import 'theme/ambient_theme.dart';
 import 'theme/palette_service.dart';
 import 'theme/vibe_theme.dart';
@@ -65,3 +66,9 @@ final fireMixProvider =
     StateNotifierProvider<FireMixNotifier, List<VibeTrack>>(
   (ref) => FireMixNotifier(),
 );
+
+// Preset mixes — generated once per day, cached in SharedPreferences.
+// Invalidate by calling PresetMixService.invalidate() then ref.invalidate(presetMixesProvider).
+final presetMixesProvider = FutureProvider<List<VibeMix>>((ref) {
+  return PresetMixService.getMixes();
+});

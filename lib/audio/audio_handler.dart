@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../api/jellyfin_models.dart';
 import '../api/jellyfin_api.dart';
+import '../services/download_service.dart';
+import '../services/genre_cluster_service.dart';
 import '../services/recently_played_service.dart';
 import '../services/last_played_service.dart';
+import '../services/on_deck_service.dart';
 
 // ─── Playback mode ─────────────────────────────────────────────────────────────
 // Only crossfade is implemented now. The enum exists so Smart/Gapless modes
@@ -18,24 +22,34 @@ enum PlaybackMode {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-MediaItem _toMediaItem(VibeTrack t, {String playbackContext = 'album'}) => MediaItem(
-  id:       t.id,
-  title:    t.title,
-  artist:   t.artist,
-  album:    t.album,
-  duration: t.duration,
-  artUri:   Uri.parse(t.artworkUrl),
-  extras: {
-    'url':             t.url,
-    'albumId':         t.albumId,
-    'artistId':        t.artistId,
-    'colorUrl':        t.colorUrl,
-    'blurHash':        t.blurHash,
-    'durationMicros':  t.duration.inMicroseconds,
-    'isAI':            t.isAI,
-    'playbackContext': playbackContext,
-  },
-);
+MediaItem _toMediaItem(VibeTrack t, {String playbackContext = 'album'}) {
+  // Prefer local file if downloaded — transparent offline playback from
+  // anywhere in the app, not just the Downloads screen.
+  final localPath = DownloadService.localPathSync(t.id);
+  final url = (localPath != null && File(localPath).existsSync())
+      ? Uri.file(localPath).toString()
+      : t.url;
+
+  return MediaItem(
+    id:       t.id,
+    title:    t.title,
+    artist:   t.artist,
+    album:    t.album,
+    duration: t.duration,
+    artUri:   Uri.parse(t.artworkUrl),
+    extras: {
+      'url':             url,
+      'albumId':         t.albumId,
+      'artistId':        t.artistId,
+      'colorUrl':        t.colorUrl,
+      'blurHash':        t.blurHash,
+      'durationMicros':  t.duration.inMicroseconds,
+      'trackNumber':     t.trackNumber,
+      'isAI':            t.isAI,
+      'playbackContext': playbackContext,
+    },
+  );
+}
 
 // ─── Playback engine ───────────────────────────────────────────────────────────
 //
@@ -132,6 +146,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _posSub = _primary.positionStream.listen((pos) {
       _positionCtrl.add(pos);
       _onPrimaryPosition(pos);
+      _maybeSaveSession(pos);
     });
 
     _durSub = _primary.durationStream.listen(_durationCtrl.add);
@@ -347,7 +362,14 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> _onTrackNaturalEnd() async {
     final nextIdx = _nextIndex;
     if (nextIdx == null) {
-      // Queue finished — clear state so mini player disappears.
+      // Queue finished — remove the album from On Deck so a fully-played
+      // album doesn't keep showing a stale progress bar.
+      final item    = mediaItem.value;
+      final albumId = item?.extras?['albumId'] as String?;
+      final context = item?.extras?['playbackContext'] as String?;
+      if (albumId != null && albumId.isNotEmpty && context == 'album') {
+        OnDeckService.removeSession(albumId);
+      }
       _reportStopped();
       mediaItem.add(null);
       queue.add([]);
@@ -386,13 +408,61 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   // ── Persist current track for cold-start restore ──────────────────────────
   void _saveCurrentItem(MediaItem item) => LastPlayedService.save(item);
 
+  // ── Persist session for On Deck / Jump Back In (every 5 s of playback) ────
+  int _lastSavedPosSec = -1;
+
+  void _maybeSaveSession(Duration pos) {
+    if (_loading) return;
+    final sec = pos.inSeconds;
+    if (sec < 5) return;
+    if ((sec - _lastSavedPosSec).abs() < 5) return;
+    _lastSavedPosSec = sec;
+    _saveAlbumSession(pos);
+  }
+
+  void _saveAlbumSession(Duration pos) {
+    final item = mediaItem.value;
+    if (item == null) return;
+    final albumId = item.extras?['albumId'] as String?;
+    if (albumId == null || albumId.isEmpty) return;
+    final context = item.extras?['playbackContext'] as String?;
+    if (context != 'album') return; // only album playback updates On Deck
+
+    // Cumulative album progress: sum completed tracks + current position.
+    int completedMs = 0;
+    for (int i = 0; i < _queueIdx; i++) {
+      completedMs += _queue[i].duration?.inMilliseconds ?? 0;
+    }
+    final playedMs = completedMs + pos.inMilliseconds;
+    final totalMs  = _queue.fold<int>(
+        0, (sum, m) => sum + (m.duration?.inMilliseconds ?? 0));
+
+    OnDeckService.saveSession(
+      albumId:         albumId,
+      albumTitle:      item.album  ?? '',
+      artist:          item.artist ?? '',
+      artUrl:          item.artUri?.toString() ?? '',
+      playedMs:        playedMs,
+      totalMs:         totalMs,
+      trackPositionMs: pos.inMilliseconds,
+      queueIndex:      _queueIdx,
+      trackNumber:     item.extras?['trackNumber'] as int?,
+      trackTitle:      item.title,
+      trackDurationMs: item.duration?.inMilliseconds ?? 0,
+    );
+  }
+
   // ── Public API ────────────────────────────────────────────────────────────
 
   Future<void> playTracks(
     List<VibeTrack> tracks, {
     int startIndex = 0,
+    int startPositionMs = 0,
     String playbackContext = 'album',
   }) async {
+    // Snapshot the current album's progress before the queue is replaced so
+    // switching albums doesn't lose the in-progress session.
+    _saveAlbumSession(_primary.position);
     await _cancelCrossfade();
     _loading = true;
     _reportStopped();
@@ -412,13 +482,86 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     await _primary.stop();
     await _primary.setVolume(1.0);
     await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
+    if (startPositionMs > 0) {
+      await _primary.seek(Duration(milliseconds: startPositionMs));
+    }
 
     _reportStarted(item.id);
     _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
+
+    // When playing a single track outside an album, auto-fill queue with
+    // Jellyfin InstantMix so the listener gets a radio-like experience.
+    if (tracks.length == 1 && playbackContext != 'album') {
+      _autoFillWithInstantMix(tracks[startIndex.clamp(0, tracks.length - 1)]);
+    }
+  }
+
+  Future<void> _autoFillWithInstantMix(VibeTrack seed) async {
+    try {
+      final mix = await JellyfinApi.getInstantMixTracks(seed.id, limit: 50);
+
+      // Determine which dynamic genre cluster the seed belongs to so the
+      // queue stays stylistically consistent for any genre — not just the
+      // two hardcoded Christian sub-genres.
+      final seedGenres = ((seed.raw['Genres'] as List?) ?? [])
+          .cast<String>()
+          .map((g) => g.toLowerCase().trim())
+          .toSet();
+
+      // Ensure the cluster cache is warm; if getSimilarArtistsByGenre already
+      // primed it this session this is a no-op.
+      await GenreClusterService.getClusters();
+      final cluster = GenreClusterService.clusterFor(seedGenres);
+
+      final toAdd = mix.where((t) {
+        if (t.id == seed.id) return false;
+        if (cluster == null) return true; // no recognised cluster — keep all
+        final tGenres = ((t.raw['Genres'] as List?) ?? [])
+            .cast<String>()
+            .map((g) => g.toLowerCase().trim())
+            .toSet();
+        // Keep tracks that share the cluster OR carry only generic tags.
+        return cluster.matchesAny(tGenres) ||
+            tGenres.every(GenreClusterService.isGeneric);
+      }).toList();
+
+      if (toAdd.isEmpty) return;
+      for (final t in toAdd) {
+        _queue.add(_toMediaItem(t, playbackContext: 'instant_mix'));
+      }
+      queue.add(List.unmodifiable(_queue));
+    } catch (_) {}
   }
 
   Future<void> addToQueue(VibeTrack track) async {
-    _queue.add(_toMediaItem(track));
+    _queue.add(_toMediaItem(track, playbackContext: 'vibe_out'));
+    queue.add(List.unmodifiable(_queue));
+  }
+
+  // Insert track immediately after the current position.
+  // If the queue is empty, starts playing the track.
+  Future<void> playNext(VibeTrack track) async {
+    if (_queue.isEmpty) {
+      await playTracks([track], playbackContext: 'vibe_out');
+      return;
+    }
+    final insertIdx = (_queueIdx + 1).clamp(0, _queue.length);
+    _queue.insert(insertIdx, _toMediaItem(track, playbackContext: 'vibe_out'));
+    queue.add(List.unmodifiable(_queue));
+  }
+
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    if (oldIndex == newIndex) return;
+    final item = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, item);
+    if (oldIndex == _queueIdx) {
+      _queueIdx = newIndex;
+    } else if (oldIndex < _queueIdx && newIndex >= _queueIdx) {
+      _queueIdx--;
+    } else if (oldIndex > _queueIdx && newIndex <= _queueIdx) {
+      _queueIdx++;
+    }
+    _currentIdxCtrl.add(_queueIdx);
     queue.add(List.unmodifiable(_queue));
   }
 
@@ -454,7 +597,13 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     return _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
   }
 
-  @override Future<void> pause() => _primary.pause();
+  @override
+  Future<void> pause() async {
+    await _primary.pause();
+    // Save immediately on pause so On Deck / Jump Back In update without
+    // waiting for the next periodic tick.
+    _saveAlbumSession(_primary.position);
+  }
 
   @override
   Future<void> stop() async {

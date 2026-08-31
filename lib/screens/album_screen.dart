@@ -8,6 +8,7 @@ import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
 import '../services/download_service.dart';
+import '../services/on_deck_service.dart';
 import '../theme/palette_service.dart';
 import '../theme/vibe_theme.dart';
 import '../widgets/mini_player.dart';
@@ -36,12 +37,14 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   VibeTheme?                   _albumTheme;
   String?                      _artistId;
   List<Map<String, dynamic>>   _similarArtists = [];
+  AlbumSession?                _session;
 
   @override
   void initState() {
     super.initState();
     _loadTracks();
     _extractPalette();
+    _session = OnDeckService.getSession(widget.albumId);
   }
 
   Future<void> _extractPalette() async {
@@ -96,6 +99,19 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     ref.read(audioHandlerProvider).playTracks(
       _tracks,
       startIndex: index.clamp(0, _tracks.length - 1),
+    );
+  }
+
+  Future<void> _resume() async {
+    final session = _session;
+    if (session == null || _tracks.isEmpty || !mounted) return;
+    ref.read(playerOpenProvider.notifier).state = true;
+    context.push('/player');
+    final idx = session.queueIndex.clamp(0, _tracks.length - 1);
+    await ref.read(audioHandlerProvider).playTracks(
+      _tracks,
+      startIndex:      idx,
+      startPositionMs: session.trackPositionMs,
     );
   }
 
@@ -291,6 +307,17 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                       ),
 
                       const SizedBox(height: 16),
+
+                      // Resume banner — shown when this album has a saved session.
+                      if (_session != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(hPad, 0, hPad, 12),
+                          child: _ResumeBanner(
+                            session: _session!,
+                            theme:   _albumTheme ?? ref.watch(themeProvider),
+                            onResume: _resume,
+                          ),
+                        ),
 
                       // Thin divider between header and track list
                       Padding(
@@ -613,6 +640,104 @@ class _NowPlayingBarsState extends State<_NowPlayingBars>
           ),
         );
       },
+    );
+  }
+}
+
+// ── Resume banner ─────────────────────────────────────────────────────────────
+// Shown below the album header when there is a saved On Deck session.
+// Shows album progress + track info + Resume button. The track list beneath
+// it lets the user pick a different song instead.
+class _ResumeBanner extends StatelessWidget {
+  final AlbumSession session;
+  final VibeTheme    theme;
+  final VoidCallback onResume;
+
+  const _ResumeBanner({
+    required this.session,
+    required this.theme,
+    required this.onResume,
+  });
+
+  String get _label {
+    final trackNum = session.trackNumber ?? (session.queueIndex + 1);
+    final dur  = Duration(milliseconds: session.trackDurationMs);
+    final pos  = Duration(milliseconds: session.trackPositionMs);
+    final left = dur - pos;
+    if (left.inSeconds > 0) {
+      final m = left.inMinutes;
+      final s = (left.inSeconds % 60).toString().padLeft(2, '0');
+      return 'Track $trackNum  ·  $m:$s left';
+    }
+    return 'Track $trackNum';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color:        theme.accent.withAlpha(0x1A),
+        borderRadius: BorderRadius.circular(12),
+        border:       Border.all(color: theme.accent.withAlpha(0x44)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _label,
+                  style: TextStyle(
+                    color:    theme.accentBright,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value:           session.progressFraction,
+                    minHeight:       3,
+                    backgroundColor: Colors.white.withAlpha(0x22),
+                    valueColor:      AlwaysStoppedAnimation(theme.accent),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          GestureDetector(
+            onTap: onResume,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color:        theme.accent,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(color: theme.accent.withAlpha(0x55), blurRadius: 8),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.play_arrow_rounded, color: Colors.white, size: 16),
+                  SizedBox(width: 4),
+                  Text('Resume',
+                    style: TextStyle(
+                      color:      Colors.white,
+                      fontSize:   13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

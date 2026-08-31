@@ -354,7 +354,7 @@ class VibeStationGrid extends StatelessWidget {
           ),
           if (isOdd) ...[
             const SizedBox(height: 12),
-            SizedBox(height: 72, child: _wideCard(stations.last)),
+            SizedBox(height: 80, child: _wideCard(stations.last)),
           ],
         ],
       ),
@@ -525,6 +525,64 @@ class VibeTrackRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── 2×2 art collage ──────────────────────────────────────────────────────────
+
+/// Four-cell art collage used for mix cards and the MixDetailScreen header.
+/// Accepts any number of [imageUrls] — unfilled cells show a placeholder.
+class ArtCollage extends StatelessWidget {
+  final List<String> imageUrls;
+  final VibeTheme    theme;
+  final double       radius;
+
+  const ArtCollage({
+    super.key,
+    required this.imageUrls,
+    required this.theme,
+    this.radius = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = [...imageUrls.take(4)];
+    while (urls.length < 4) { urls.add(''); }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: LayoutBuilder(
+        builder: (_, constraints) {
+          final cell = constraints.maxWidth / 2;
+          return SizedBox(
+            width:  constraints.maxWidth,
+            height: constraints.maxWidth,
+            child: Wrap(
+              children: urls.map((url) => _cell(url, cell)).toList(),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _cell(String url, double size) {
+    if (url.isEmpty) {
+      return Container(
+        width: size, height: size,
+        color: theme.surface,
+        child: Icon(Icons.music_note, color: theme.textFaint, size: size * 0.3),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl:    url,
+      width:       size,
+      height:      size,
+      fit:         BoxFit.cover,
+      errorWidget: (_, _, _) => Container(
+        width: size, height: size,
+        color: theme.surface,
       ),
     );
   }

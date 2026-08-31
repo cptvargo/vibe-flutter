@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../config/jellyfin_config.dart';
+import '../services/genre_cluster_service.dart';
+import 'jellyfin_models.dart';
 
 // Thrown when Jellyfin returns 401 — token expired or revoked.
 class JellyfinAuthException implements Exception {
@@ -77,7 +79,7 @@ class JellyfinApi {
           '&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=SortName$_lp');
 
   static const _trackFields =
-      'PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds,ImageTags';
+      'PrimaryImageAspectRatio,AudioInfo,ParentId,ArtistItems,AlbumArtistIds,ImageTags,Album,AlbumArtist,Genres';
 
   static Future<Map<String, dynamic>> getAlbumTracks(String albumId) =>
       _get('/Users/$_user/Items?ParentId=$albumId&IncludeItemTypes=Audio'
@@ -123,10 +125,40 @@ class JellyfinApi {
   static Future<Map<String, dynamic>> getInstantMix(String itemId, {int limit = 50}) =>
       _get('/Items/$itemId/InstantMix?UserId=$_user&Limit=$limit&Fields=$_trackFields');
 
+  static Future<List<VibeTrack>> getInstantMixTracks(String itemId, {int limit = 50}) async {
+    try {
+      final res = await getInstantMix(itemId, limit: limit);
+      return ((res['Items'] as List?) ?? [])
+          .cast<Map<String, dynamic>>()
+          .map(VibeTrack.fromJellyfin)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   static Future<Map<String, dynamic>> getTopTracks({int limit = 50}) =>
       _get('/Users/$_user/Items?IncludeItemTypes=Audio'
           '&Limit=$limit&Recursive=true&Fields=$_trackFields'
           '&SortBy=PlayCount&SortOrder=Descending&Filters=IsPlayed$_lp');
+
+  // Random tracks from the full library — used by ViBE Out.
+  static Future<List<VibeTrack>> getRandomTracks({int limit = 28}) async {
+    final res = await _get('/Users/$_user/Items?IncludeItemTypes=Audio'
+        '&SortBy=Random&Limit=$limit&Recursive=true&Fields=$_trackFields$_lp');
+    return ((res['Items'] as List?) ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(VibeTrack.fromJellyfin)
+        .toList();
+  }
+
+  // Single item by ID — used to patch stale session album titles.
+  static Future<Map<String, dynamic>> getItem(String id) =>
+      _get('/Users/$_user/Items/$id');
+
+  // Single track by Jellyfin item ID — used by deep link handler.
+  static Future<Map<String, dynamic>> getTrackById(String id) =>
+      _get('/Users/$_user/Items/$id?Fields=$_trackFields');
 
   // ── AI library queries ─────────────────────────────────────────────────────
   // Short-circuit when no AI library is configured (own-server users).
@@ -181,28 +213,28 @@ class JellyfinApi {
 
   // ── Genre similarity ───────────────────────────────────────────────────────
 
-  static const _hipHopGenres = {
-    'christian hip-hop', 'hip-hop', 'rap', 'christian rap',
-    'hip-hop/rap', 'christian/rap', 'trap',
-  };
-  static const _worshipGenres = {
-    'contemporary christian', 'praise & worship', 'worship',
-    'gospel', 'ccm', 'christian pop',
-  };
-  static const _genericGenres = {'music', 'christian', ''};
+  /// Raw album list used by [GenreClusterService] and [getSimilarArtistsByGenre].
+  static Future<List<Map<String, dynamic>>> getAllAlbumsRaw() async {
+    final res = await _get(
+        '/Users/$_user/Items?IncludeItemTypes=MusicAlbum'
+        '&Recursive=true&Fields=Genres,AlbumArtist,AlbumArtists&Limit=2000$_lp');
+    return ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
+  }
 
   static Future<List<Map<String, dynamic>>> getSimilarArtistsByGenre(
       String artistId, {String? albumId, String? artistName, int limit = 8}) async {
     try {
       final excludeName = (artistName ?? '').toLowerCase().trim();
-      final res = await _get(
-          '/Users/$_user/Items?IncludeItemTypes=MusicAlbum'
-          '&Recursive=true&Fields=Genres,AlbumArtist,AlbumArtists&Limit=500$_lp');
-      final albums = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
+      final albums      = await getAllAlbumsRaw();
+
+      // Prime the cluster cache with these albums so other features that call
+      // GenreClusterService later don't need a second round-trip.
+      GenreClusterService.buildFromAlbums(albums);
 
       final artistGenres  = <String, Set<String>>{};
       final artistNames   = <String, String>{};
       final albumToArtist = <String, String>{};
+
       for (final album in albums) {
         final artists = (album['AlbumArtists'] as List?)?.cast<Map<String, dynamic>>();
         final aId    = artists?.firstOrNull?['Id'] as String? ?? '';
@@ -212,7 +244,7 @@ class JellyfinApi {
         final gs = (album['Genres'] as List? ?? [])
             .cast<String>()
             .map((g) => g.toLowerCase().trim())
-            .where((g) => !_genericGenres.contains(g))
+            .where((g) => !GenreClusterService.isGeneric(g))
             .toSet();
         artistGenres.putIfAbsent(aId, () => {}).addAll(gs);
         artistNames[aId] = aName;
@@ -221,12 +253,9 @@ class JellyfinApi {
 
       final resolvedId    = (albumId != null ? albumToArtist[albumId] : null) ?? artistId;
       final currentGenres = artistGenres[resolvedId] ?? {};
-      Set<String> bucket;
-      if (currentGenres.any(_hipHopGenres.contains)) {
-        bucket = _hipHopGenres;
-      } else if (currentGenres.any(_worshipGenres.contains)) {
-        bucket = _worshipGenres;
-      } else {
+      final cluster       = GenreClusterService.clusterFor(currentGenres);
+
+      if (cluster == null) {
         return _randomOtherArtists(artistId, excludeName: excludeName, limit: limit);
       }
 
@@ -243,7 +272,7 @@ class JellyfinApi {
         if (!seenIds.add(aId)) continue;
         if (!seenNames.add(aLow)) continue;
         if (excludeName.isNotEmpty && aLow.contains(excludeName)) continue;
-        if (entry.value.any(bucket.contains)) {
+        if (entry.value.any(cluster.containsGenre)) {
           result.add({'Id': aId, 'Name': aName});
         }
       }
