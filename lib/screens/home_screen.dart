@@ -1280,35 +1280,45 @@ class _DailyArtistSection extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Name
+                  // Name + chevron — tappable to artist page
                   Expanded(
                     child: GestureDetector(
                       onTap: onArtistTap,
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color:         theme.textColor,
-                          fontSize:      18,
-                          fontWeight:    FontWeight.w700,
-                          letterSpacing: 0.3,
-                          shadows: [
-                            Shadow(color: theme.accent.withAlpha(0xCC), blurRadius: 10),
-                            Shadow(color: theme.accentBright.withAlpha(0x55), blurRadius: 22),
-                          ],
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color:         theme.textColor,
+                                fontSize:      18,
+                                fontWeight:    FontWeight.w700,
+                                letterSpacing: 0.3,
+                                shadows: [
+                                  Shadow(color: theme.accent.withAlpha(0xCC), blurRadius: 10),
+                                  Shadow(color: theme.accentBright.withAlpha(0x55), blurRadius: 22),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.chevron_right_rounded,
+                              color: theme.accentBright, size: 20),
+                        ],
                       ),
                     ),
                   ),
-                  // See All → all-artists
+                  // All Artists → /all-artists
                   GestureDetector(
                     onTap: onSeeAll,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'See All',
+                          'All Artists',
                           style: TextStyle(
                             color:      theme.accentBright,
                             fontSize:   13,
