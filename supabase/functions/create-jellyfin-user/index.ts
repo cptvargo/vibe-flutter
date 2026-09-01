@@ -27,8 +27,9 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    // Normalise code — accept with or without VIBE- prefix
-    const code = invite_code.toUpperCase().replace(/^VIBE-/, '')
+    // Normalise code — ensure it has the VIBE- prefix to match DB storage
+    const raw  = (invite_code as string).toUpperCase().trim()
+    const code = raw.startsWith('VIBE-') ? raw : `VIBE-${raw}`
 
     // Validate invite and fetch server details in one query
     const { data: invite, error: inviteErr } = await supabase
