@@ -156,6 +156,25 @@ class JellyfinApi {
         .toList();
   }
 
+  // Random tracks filtered to specific genres — used by ViBE Out queue fill.
+  // Falls back gracefully if Jellyfin returns fewer than [minResults] tracks.
+  static Future<List<VibeTrack>> getRandomTracksByGenres(
+    List<String> genres, {
+    int limit = 50,
+    int minResults = 10,
+  }) async {
+    if (genres.isEmpty) return [];
+    final genreParam = genres.map(Uri.encodeComponent).join(',');
+    final res = await _get('/Users/$_user/Items?IncludeItemTypes=Audio'
+        '&SortBy=Random&Limit=$limit&Recursive=true&Fields=$_trackFields'
+        '&Genres=$genreParam$_lp');
+    final tracks = ((res['Items'] as List?) ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(VibeTrack.fromJellyfin)
+        .toList();
+    return tracks.length >= minResults ? tracks : [];
+  }
+
   // Single item by ID — used to patch stale session album titles.
   static Future<Map<String, dynamic>> getItem(String id) =>
       _get('/Users/$_user/Items/$id');

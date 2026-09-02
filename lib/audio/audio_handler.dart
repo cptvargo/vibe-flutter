@@ -437,13 +437,22 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     final totalMs  = _queue.fold<int>(
         0, (sum, m) => sum + (m.duration?.inMilliseconds ?? 0));
 
+    // Preserve the best known data: never regress progress, never lose totalMs.
+    final existing          = OnDeckService.getSession(albumId);
+    final effectivePlayedMs = max(playedMs, existing?.playedMs ?? 0);
+    final effectiveTotalMs  = totalMs > 0 ? totalMs : (existing?.totalMs ?? 0);
+
+    // Skip if there's nothing meaningful to save (album just barely started
+    // and no prior session exists to preserve).
+    if (effectiveTotalMs == 0 || (existing == null && pos.inSeconds < 5)) return;
+
     OnDeckService.saveSession(
       albumId:         albumId,
       albumTitle:      item.album  ?? '',
       artist:          item.artist ?? '',
       artUrl:          item.artUri?.toString() ?? '',
-      playedMs:        playedMs,
-      totalMs:         totalMs,
+      playedMs:        effectivePlayedMs,
+      totalMs:         effectiveTotalMs,
       trackPositionMs: pos.inMilliseconds,
       queueIndex:      _queueIdx,
       trackNumber:     item.extras?['trackNumber'] as int?,
@@ -494,10 +503,15 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _reportStarted(item.id);
     _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
 
-    // When playing a single track outside an album, auto-fill queue with
-    // Jellyfin InstantMix so the listener gets a radio-like experience.
+    // When playing a single track outside an album, auto-fill the queue.
+    // ViBE Out uses a pure random fill; other contexts use InstantMix.
     if (tracks.length == 1 && playbackContext != 'album') {
-      _autoFillWithInstantMix(tracks[startIndex.clamp(0, tracks.length - 1)]);
+      final seed = tracks[startIndex.clamp(0, tracks.length - 1)];
+      if (playbackContext == 'vibe_out') {
+        _autoFillWithRandomTracks(seed);
+      } else {
+        _autoFillWithInstantMix(seed);
+      }
     }
   }
 
@@ -533,6 +547,25 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       if (toAdd.isEmpty) return;
       for (final t in toAdd) {
         _queue.add(_toMediaItem(t, playbackContext: 'instant_mix'));
+      }
+      queue.add(List.unmodifiable(_queue));
+    } catch (_) {}
+  }
+
+  Future<void> _autoFillWithRandomTracks(VibeTrack seed) async {
+    try {
+      // Try genre-matched random first, fall back to full-library random.
+      List<VibeTrack> tracks = seed.genres.isNotEmpty
+          ? await JellyfinApi.getRandomTracksByGenres(seed.genres, limit: 50)
+          : [];
+      if (tracks.isEmpty) {
+        tracks = await JellyfinApi.getRandomTracks(limit: 50);
+      }
+      final usedIds = _queue.map((m) => m.id).toSet();
+      final toAdd   = tracks.where((t) => !usedIds.contains(t.id)).toList();
+      if (toAdd.isEmpty) return;
+      for (final t in toAdd) {
+        _queue.add(_toMediaItem(t, playbackContext: 'vibe_out'));
       }
       queue.add(List.unmodifiable(_queue));
     } catch (_) {}

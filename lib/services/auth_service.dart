@@ -285,8 +285,7 @@ class AuthService {
   static String _randomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rng = Random.secure();
-    final suffix = List.generate(6, (_) => chars[rng.nextInt(chars.length)]).join();
-    return 'VIBE-$suffix';
+    return List.generate(6, (_) => chars[rng.nextInt(chars.length)]).join();
   }
 
   // Which Jellyfin server should this user connect to?

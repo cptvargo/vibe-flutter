@@ -21,6 +21,7 @@ class FireMixService {
         colorUrl:   m['colorUrl'] as String,
         blurHash:   m['blurHash'] as String?,
         duration:   Duration(microseconds: m['durationMicros'] as int? ?? 0),
+        genres:     (m['genres'] as List?)?.cast<String>() ?? const [],
         raw:        {},
       );
     }).toList();
@@ -39,6 +40,7 @@ class FireMixService {
       'colorUrl':       t.colorUrl,
       'blurHash':       t.blurHash,
       'durationMicros': t.duration.inMicroseconds,
+      'genres':         t.genres,
     })).toList());
   }
 }

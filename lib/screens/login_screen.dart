@@ -90,11 +90,12 @@ class _LoginScreenState extends State<LoginScreen>
       _fadeCtrl.forward();
       if (mode == _Mode.join) {
         final clip = await Clipboard.getData(Clipboard.kTextPlain);
-        final text = clip?.text?.toUpperCase().trim() ?? '';
-        final code = text.startsWith('VIBE-') ? text.substring(5) : text;
-        if (code.length >= 4 && mounted) {
-          _codeCtrl.text = code;
-          _checkCode(code);
+        final raw  = clip?.text?.toUpperCase().trim() ?? '';
+        final code = raw.replaceAll(RegExp(r'[^A-Z0-9]'), '');
+        final trimmed = code.length > 6 ? code.substring(0, 6) : code;
+        if (trimmed.length >= 4 && mounted) {
+          _codeCtrl.text = trimmed;
+          _checkCode(trimmed);
         }
       }
     });
@@ -110,8 +111,7 @@ class _LoginScreenState extends State<LoginScreen>
     }
     setState(() => _codeChecking = true);
     try {
-      // Controller holds just the suffix (e.g. "ABCD12"); Supabase stores full code
-      final data = await AuthService.redeemInviteCode('VIBE-$code');
+      final data = await AuthService.redeemInviteCode(code);
       if (mounted) {
         setState(() {
           _codeChecking    = false;
@@ -224,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (_mode == _Mode.join) {
         // Create Jellyfin account via edge function first
         final jellyfinResult = await AuthService.createJellyfinAccountForInvite(
-          inviteCode: 'VIBE-${_codeCtrl.text.trim()}',
+          inviteCode: _codeCtrl.text.trim(),
           username:   _jellyfinUserCtrl.text.trim(),
           password:   _jellyfinPassCtrl.text,
         );
@@ -796,7 +796,7 @@ class _CodeField extends StatelessWidget {
       ),
       decoration: InputDecoration(
         labelText: 'Invite Code',
-        hintText:  'VIBE-XXXXXX',
+        hintText:  'XXXXXX',
         hintStyle: const TextStyle(color: Color(0xFF555566), letterSpacing: 2),
         labelStyle: const TextStyle(color: _kTextDim, fontSize: 13),
         filled:    true,
@@ -834,14 +834,7 @@ class _CodeFormatter extends TextInputFormatter {
   TextEditingValue formatEditUpdate(
     TextEditingValue old, TextEditingValue value,
   ) {
-    var text = value.text.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9\-]'), '');
-
-    // Strip VIBE- prefix if user pasted the full code
-    if (text.startsWith('VIBE-')) text = text.substring(5);
-
-    // Remove any remaining dashes so the controller holds only the suffix
-    text = text.replaceAll('-', '');
-
+    var text = value.text.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
     if (text.length > 6) text = text.substring(0, 6);
 
     return TextEditingValue(

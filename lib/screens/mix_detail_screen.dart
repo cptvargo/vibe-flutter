@@ -30,6 +30,7 @@ class MixDetailScreen extends ConsumerStatefulWidget {
 
 class _MixDetailScreenState extends ConsumerState<MixDetailScreen> {
   late String _name;
+  String? _selectedGenre; // null = All
 
   @override
   void initState() {
@@ -39,26 +40,43 @@ class _MixDetailScreenState extends ConsumerState<MixDetailScreen> {
 
   bool get _isFire => widget.mixId == null;
 
+  List<String> get _genres {
+    final seen = <String>{};
+    final out  = <String>[];
+    for (final t in widget.tracks) {
+      for (final g in t.genres) {
+        if (g.isNotEmpty && seen.add(g)) out.add(g);
+      }
+    }
+    out.sort();
+    return out;
+  }
+
+  List<VibeTrack> get _filteredTracks {
+    if (_selectedGenre == null) return widget.tracks;
+    return widget.tracks.where((t) => t.genres.contains(_selectedGenre)).toList();
+  }
+
   // ── Playback ─────────────────────────────────────────────────────────────────
 
   void _play({required bool shuffle}) {
-    if (widget.tracks.isEmpty) return;
+    final filtered = _filteredTracks;
+    if (filtered.isEmpty) return;
     final handler = ref.read(audioHandlerProvider);
     ref.read(isAIProvider.notifier).state = false;
     ref.read(playerOpenProvider.notifier).state = true;
-    final tracks = shuffle
-        ? ([...widget.tracks]..shuffle())
-        : widget.tracks;
+    final tracks = shuffle ? ([...filtered]..shuffle()) : filtered;
     handler.playTracks(tracks, playbackContext: 'mix');
     context.push('/player');
   }
 
   void _playTrack(int index) {
-    if (widget.tracks.isEmpty) return;
+    final filtered = _filteredTracks;
+    if (filtered.isEmpty) return;
     final handler = ref.read(audioHandlerProvider);
     ref.read(isAIProvider.notifier).state = false;
     ref.read(playerOpenProvider.notifier).state = true;
-    handler.playTracks(widget.tracks, startIndex: index, playbackContext: 'mix');
+    handler.playTracks(filtered, startIndex: index, playbackContext: 'mix');
     context.push('/player');
   }
 
@@ -126,17 +144,22 @@ class _MixDetailScreenState extends ConsumerState<MixDetailScreen> {
             slivers: [
               SliverToBoxAdapter(child: _header(theme, collage, screenW)),
               SliverToBoxAdapter(child: _buttons(theme)),
+              if (_isFire && _genres.isNotEmpty)
+                SliverToBoxAdapter(child: _genreChips(theme)),
               const SliverToBoxAdapter(child: SizedBox(height: 8)),
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (_, i) => _TrackRow(
-                    track:   widget.tracks[i],
-                    index:   i,
-                    theme:   theme,
-                    isFire:  _isFire,
-                    onTap:   () => _playTrack(i),
-                  ),
-                  childCount: widget.tracks.length,
+                  (_, i) {
+                    final filtered = _filteredTracks;
+                    return _TrackRow(
+                      track:   filtered[i],
+                      index:   i,
+                      theme:   theme,
+                      isFire:  _isFire,
+                      onTap:   () => _playTrack(i),
+                    );
+                  },
+                  childCount: _filteredTracks.length,
                 ),
               ),
               SliverToBoxAdapter(
@@ -255,7 +278,9 @@ class _MixDetailScreenState extends ConsumerState<MixDetailScreen> {
 
                 const SizedBox(height: 4),
                 Text(
-                  '${widget.tracks.length} tracks',
+                  _selectedGenre == null
+                      ? '${widget.tracks.length} tracks'
+                      : '${_filteredTracks.length} of ${widget.tracks.length} tracks',
                   style: const TextStyle(
                     color:    Colors.white54,
                     fontSize: 13,
@@ -264,6 +289,35 @@ class _MixDetailScreenState extends ConsumerState<MixDetailScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _genreChips(VibeTheme theme) {
+    final genres = _genres;
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection:  Axis.horizontal,
+        padding:          const EdgeInsets.symmetric(horizontal: 20),
+        children: [
+          _GenreChip(
+            label:    'All',
+            selected: _selectedGenre == null,
+            accent:   theme.accent,
+            onTap:    () => setState(() => _selectedGenre = null),
+          ),
+          ...genres.map((g) => Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: _GenreChip(
+              label:    g,
+              selected: _selectedGenre == g,
+              accent:   theme.accent,
+              onTap:    () => setState(() =>
+                  _selectedGenre = _selectedGenre == g ? null : g),
+            ),
+          )),
         ],
       ),
     );
@@ -438,6 +492,52 @@ class _TrackRow extends StatelessWidget {
     final m = d.inMinutes;
     final s = d.inSeconds % 60;
     return '$m:${s.toString().padLeft(2, '0')}';
+  }
+}
+
+// ── Genre chip ────────────────────────────────────────────────────────────────
+
+class _GenreChip extends StatelessWidget {
+  final String     label;
+  final bool       selected;
+  final Color      accent;
+  final VoidCallback onTap;
+
+  const _GenreChip({
+    required this.label,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve:    Curves.easeOut,
+        padding:  const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color:        selected ? accent : Colors.white.withAlpha(0x14),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? Colors.transparent : Colors.white.withAlpha(0x22),
+          ),
+          boxShadow: selected
+              ? [BoxShadow(color: accent.withAlpha(0x55), blurRadius: 8)]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color:      selected ? Colors.white : Colors.white60,
+            fontSize:   13,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
   }
 }
 

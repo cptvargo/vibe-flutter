@@ -14,6 +14,7 @@ class VibeTrack {
   final String? blurHash;
   final Duration duration;
   final int?  trackNumber;
+  final List<String> genres;
   final Map<String, dynamic> raw;
   final bool isAI;
 
@@ -30,6 +31,7 @@ class VibeTrack {
     this.blurHash,
     required this.duration,
     this.trackNumber,
+    this.genres = const [],
     required this.raw,
     this.isAI = false,
   });
@@ -46,6 +48,7 @@ class VibeTrack {
     colorUrl:   j['colorUrl']   as String,
     blurHash:   j['blurHash']   as String?,
     duration:   Duration(microseconds: j['durationMicros'] as int),
+    genres:     (j['genres'] as List?)?.cast<String>() ?? const [],
     raw:        {},
     isAI:       j['isAI']       as bool? ?? false,
   );
@@ -62,6 +65,7 @@ class VibeTrack {
     'colorUrl':      colorUrl,
     'blurHash':      blurHash,
     'durationMicros': duration.inMicroseconds,
+    'genres':        genres,
     'isAI':          isAI,
   };
 
@@ -90,6 +94,7 @@ class VibeTrack {
       blurHash:    blurHash,
       duration:    Duration(microseconds: (ticks / 10).round()),
       trackNumber: j['IndexNumber'] as int?,
+      genres:      ((j['Genres'] as List?) ?? []).cast<String>(),
       raw:         j,
       isAI:        isAI,
     );
