@@ -108,16 +108,16 @@ class JellyfinApi {
 
   static Future<Map<String, dynamic>> getArtistAlbums(String artistId) =>
       _get('/Users/$_user/Items?AlbumArtistIds=$artistId&IncludeItemTypes=MusicAlbum'
-          '&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=ProductionYear&SortOrder=Descending');
+          '&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=ProductionYear&SortOrder=Descending$_lp');
 
   static Future<Map<String, dynamic>> getArtistTracks(String artistId, {int limit = 30}) =>
       _get('/Users/$_user/Items?ArtistIds=$artistId&IncludeItemTypes=Audio'
-          '&Recursive=true&Fields=$_trackFields&SortBy=Random&Limit=$limit');
+          '&Recursive=true&Fields=$_trackFields&SortBy=Random&Limit=$limit$_lp');
 
   static Future<Map<String, dynamic>> getArtistAllTracks(String artistId) =>
       _get('/Users/$_user/Items?AlbumArtistIds=$artistId&IncludeItemTypes=Audio'
           '&Recursive=true&Fields=$_trackFields,AlbumId'
-          '&SortBy=ProductionYear,ParentIndexNumber,IndexNumber&SortOrder=Descending,Ascending,Ascending&Limit=500');
+          '&SortBy=ProductionYear,ParentIndexNumber,IndexNumber&SortOrder=Descending,Ascending,Ascending&Limit=500$_lp');
 
   static Future<Map<String, dynamic>> getAllTracks({int limit = 500}) =>
       _get('/Users/$_user/Items?IncludeItemTypes=Audio'

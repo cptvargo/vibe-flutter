@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../config/jellyfin_config.dart';
+import '../config/vibe_config.dart';
 
 // Login screen — three paths:
 //   sign_in      → existing users (email + password)
@@ -243,11 +244,19 @@ class _LoginScreenState extends State<LoginScreen>
           return;
         }
 
-        // Configure Jellyfin immediately so the app works right away
+        // Configure Jellyfin immediately so the app works right away.
+        // Join flow always connects to the managed ViBE server, so library
+        // IDs are always set so users only see the scoped library.
         final serverUrl = jellyfinResult['server_url'] as String;
         final token     = jellyfinResult['jellyfin_token'] as String;
         final userId    = jellyfinResult['jellyfin_user_id'] as String;
-        await JellyfinConfig.save(serverUrl: serverUrl, apiKey: token, userId: userId);
+        await JellyfinConfig.save(
+          serverUrl: serverUrl,
+          apiKey:    token,
+          userId:    userId,
+          vibeLib:   VibeConfig.vibeLibrary,
+          aiLib:     VibeConfig.aiLibrary,
+        );
         await AuthService.saveJellyfinCredentials(
           serverUrl: serverUrl, token: token, userId: userId,
         );

@@ -47,10 +47,11 @@ class JellyfinConfig {
         serverUrl = sUrl;
         apiKey    = token;
         userId    = uid;
-        vibeLib   = '';
-        aiLib     = '';
+        // Restore library scoping for managed-server users on reinstall.
+        vibeLib   = sUrl == VibeConfig.serverUrl ? VibeConfig.vibeLibrary : '';
+        aiLib     = sUrl == VibeConfig.serverUrl ? VibeConfig.aiLibrary   : '';
         // Cache to Hive so next cold-start skips the Supabase round-trip
-        await _writeBox(box, sUrl, token, uid, '', '');
+        await _writeBox(box, sUrl, token, uid, vibeLib, aiLib);
         return;
       }
     }

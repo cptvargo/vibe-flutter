@@ -104,6 +104,20 @@ Deno.serve(async (req) => {
 
     const authData = await authRes.json() as { AccessToken: string; User: { Id: string } }
 
+    // ── 4. Restrict new user to configured libraries only ────────────────────
+    // Prevents managed-server users from seeing the full server library.
+    const vibeLibId = Deno.env.get('JELLYFIN_VIBE_LIBRARY_ID')
+    const aiLibId   = Deno.env.get('JELLYFIN_AI_LIBRARY_ID')
+    const enabledFolders = [vibeLibId, aiLibId].filter(Boolean) as string[]
+
+    if (enabledFolders.length > 0) {
+      await fetch(`${serverUrl}/Users/${jellyfinUserId}/Policy`, {
+        method: 'POST',
+        headers: { 'X-Emby-Authorization': authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ EnableAllFolders: false, EnabledFolders: enabledFolders }),
+      }).catch(() => {}) // Non-fatal — log only, user still gets created
+    }
+
     return json({
       server_url:       serverUrl,
       jellyfin_user_id: authData.User.Id,
