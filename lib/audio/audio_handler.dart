@@ -478,6 +478,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // Snapshot the current album's progress before the queue is replaced so
     // switching albums doesn't lose the in-progress session.
     _saveAlbumSession(_primary.position);
+    _userPaused = false; // new queue = new intent to play
     await _cancelCrossfade();
     _loading = true;
     _reportStopped();
