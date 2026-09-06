@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'audio/audio_handler.dart';
 import 'config/jellyfin_config.dart';
@@ -75,8 +76,15 @@ Future<void> main() async {
   final lastPlayed = await LastPlayedService.load();
   if (lastPlayed != null) handler.mediaItem.add(lastPlayed);
 
-  // Auto-play when a Bluetooth output device connects (iOS/Android only).
-  // Covers car audio (A2DP), phone calls audio (HFP), and Bluetooth LE audio.
+  // Restore shuffle preference saved before last process kill (car stop, OOM).
+  final prefs = await SharedPreferences.getInstance();
+  if (prefs.getBool('vibe_shuffle_v1') == true) {
+    await handler.setShuffleMode(AudioServiceShuffleMode.all);
+  }
+
+  // Auto-resume when a Bluetooth output device connects — covers car stereo
+  // (A2DP), headsets (SCO), and BT LE audio reconnect after disconnect.
+  // Guard: skip if the user explicitly paused; only auto-resume system-pauses.
   session.devicesChangedEventStream.listen((event) {
     // ignore: experimental_member_use
     final btAdded = event.devicesAdded.any((d) =>
@@ -88,14 +96,16 @@ Future<void> main() async {
       d.type == AudioDeviceType.bluetoothLe);
     if (btAdded &&
         !handler.playbackState.value.playing &&
+        !handler.userPaused &&
         handler.mediaItem.value != null) {
       handler.play();
     }
   });
 
   // Pause when the audio output becomes noisy (headphone unplug, BT disconnect).
+  // Uses systemPause so _userPaused is NOT set — BT reconnect can still auto-resume.
   session.becomingNoisyEventStream.listen((_) {
-    if (handler.playbackState.value.playing) handler.pause();
+    if (handler.playbackState.value.playing) handler.systemPause();
   });
 
   runApp(

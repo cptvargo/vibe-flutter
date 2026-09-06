@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../api/jellyfin_models.dart';
 import '../api/jellyfin_api.dart';
 import '../services/download_service.dart';
@@ -98,10 +99,15 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   Duration?         get duration                 => _primary.duration;
 
   // ── Queue state (Dart-managed) ───────────────────────────────────────────
-  List<MediaItem> _queue    = [];
-  int             _queueIdx = 0;
-  LoopMode        _loopMode = LoopMode.off;
-  bool            _shuffle  = false;
+  List<MediaItem> _queue      = [];
+  int             _queueIdx   = 0;
+  LoopMode        _loopMode   = LoopMode.off;
+  bool            _shuffle    = false;
+
+  // True when the user explicitly paused (vs. system/output-change pause).
+  // Used to prevent BT reconnect from auto-resuming a deliberate pause.
+  bool _userPaused = false;
+  bool get userPaused => _userPaused;
 
   // ── Playback mode / crossfade config ────────────────────────────────────
   PlaybackMode _mode         = PlaybackMode.crossfade;
@@ -612,6 +618,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
+    _userPaused = false;
     // If the queue is empty but a track was restored from cold-start, load it
     // on first play tap rather than at startup (avoids unnecessary network use).
     if (_queue.isEmpty) {
@@ -637,9 +644,17 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> pause() async {
+    _userPaused = true;
     await _primary.pause();
     // Save immediately on pause so On Deck / Jump Back In update without
     // waiting for the next periodic tick.
+    _saveAlbumSession(_primary.position);
+  }
+
+  // Pause due to a system/output event (headphone unplug, BT disconnect).
+  // Does NOT set _userPaused so BT reconnect can still auto-resume.
+  Future<void> systemPause() async {
+    await _primary.pause();
     _saveAlbumSession(_primary.position);
   }
 
@@ -707,6 +722,11 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     _shuffleCtrl.add(_shuffle);
     playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
+    // Persist so shuffle state survives process kills (car stop, OOM).
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('vibe_shuffle_v1', _shuffle);
+    } catch (_) {}
   }
 
   // ── Queue index helpers ───────────────────────────────────────────────────
