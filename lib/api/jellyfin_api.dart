@@ -149,7 +149,7 @@ class JellyfinApi {
   // Random tracks from the full library — used by ViBE Out.
   static Future<List<VibeTrack>> getRandomTracks({int limit = 28}) async {
     final res = await _get('/Users/$_user/Items?IncludeItemTypes=Audio'
-        '&SortBy=Random&Limit=$limit&Recursive=true&Fields=$_trackFields$_lp');
+        '&SortBy=Random&Limit=$limit&Recursive=true&Fields=$_trackFields');
     return ((res['Items'] as List?) ?? [])
         .cast<Map<String, dynamic>>()
         .map(VibeTrack.fromJellyfin)
