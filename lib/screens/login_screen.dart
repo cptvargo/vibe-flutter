@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../config/jellyfin_config.dart';
 import '../config/vibe_config.dart';
@@ -42,7 +43,10 @@ class _LoginScreenState extends State<LoginScreen>
   bool _loading         = false;
   bool _obscure         = true;
   bool _jellyfinObscure = true;
+  bool _hasSetupBefore  = false; // drives which tabs are shown
   String? _error;
+
+  static const _setupKey = 'vibe_has_setup';
 
   Map<String, dynamic>? _validatedInvite;
   bool _codeChecking = false;
@@ -60,6 +64,22 @@ class _LoginScreenState extends State<LoginScreen>
     );
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
+    _loadSetupState();
+  }
+
+  Future<void> _loadSetupState() async {
+    final prefs    = await SharedPreferences.getInstance();
+    final hasSetup = prefs.getBool(_setupKey) ?? false;
+    if (!mounted) return;
+    setState(() {
+      _hasSetupBefore = hasSetup;
+      _mode = hasSetup ? _Mode.signIn : _Mode.ownServer;
+    });
+  }
+
+  Future<void> _markSetupComplete() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_setupKey, true);
   }
 
   @override
@@ -92,11 +112,16 @@ class _LoginScreenState extends State<LoginScreen>
       if (mode == _Mode.join) {
         final clip = await Clipboard.getData(Clipboard.kTextPlain);
         final raw  = clip?.text?.toUpperCase().trim() ?? '';
-        final code = raw.replaceAll(RegExp(r'[^A-Z0-9]'), '');
-        final trimmed = code.length > 6 ? code.substring(0, 6) : code;
-        if (trimmed.length >= 4 && mounted) {
-          _codeCtrl.text = trimmed;
-          _checkCode(trimmed);
+        // Only auto-fill if clipboard looks like a real ViBE invite code —
+        // either VIBE-XXXXXX format or exactly 6 bare alphanumeric characters.
+        // Prevents stale clipboard content from polluting the field.
+        final stripped = raw.startsWith('VIBE-')
+            ? raw.substring(5).replaceAll(RegExp(r'[^A-Z0-9]'), '')
+            : raw.replaceAll(RegExp(r'[^A-Z0-9]'), '');
+        final isVibeCode = raw.startsWith('VIBE-') || stripped.length == 6;
+        if (isVibeCode && stripped.length == 6 && mounted) {
+          _codeCtrl.text = stripped;
+          _checkCode(stripped);
         }
       }
     });
@@ -176,7 +201,11 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       if (_mode == _Mode.signIn) {
         final res = await AuthService.signIn(email: email, password: password);
-        if (res.user == null && mounted) _setError('Sign in failed. Check your credentials.');
+        if (res.user == null && mounted) {
+          _setError('Sign in failed. Check your credentials.');
+          return;
+        }
+        await _markSetupComplete();
         // JellyfinConfig loads automatically via auth state listener
         return;
       }
@@ -219,6 +248,7 @@ class _LoginScreenState extends State<LoginScreen>
           apiKey:    creds.token,
           userId:    creds.userId,
         );
+        await _markSetupComplete();
         return;
       }
 
@@ -260,6 +290,7 @@ class _LoginScreenState extends State<LoginScreen>
         await AuthService.saveJellyfinCredentials(
           serverUrl: serverUrl, token: token, userId: userId,
         );
+        await _markSetupComplete();
       }
     } on Exception catch (e) {
       if (mounted) _setError(e.toString().replaceAll(RegExp(r'^Exception: '), ''));
@@ -356,21 +387,23 @@ class _LoginScreenState extends State<LoginScreen>
       padding: const EdgeInsets.all(4),
       child: Row(
         children: [
-          _ModeTab(
-            label: 'Sign In',
-            selected: _mode == _Mode.signIn,
-            onTap: () => _switchMode(_Mode.signIn),
-          ),
+          if (_hasSetupBefore)
+            _ModeTab(
+              label: 'Sign In',
+              selected: _mode == _Mode.signIn,
+              onTap: () => _switchMode(_Mode.signIn),
+            ),
           _ModeTab(
             label: "Friend's Library",
             selected: _mode == _Mode.join,
             onTap: () => _switchMode(_Mode.join),
           ),
-          _ModeTab(
-            label: 'Own Server',
-            selected: _mode == _Mode.ownServer,
-            onTap: () => _switchMode(_Mode.ownServer),
-          ),
+          if (!_hasSetupBefore)
+            _ModeTab(
+              label: 'Own Server',
+              selected: _mode == _Mode.ownServer,
+              onTap: () => _switchMode(_Mode.ownServer),
+            ),
         ],
       ),
     );
@@ -407,7 +440,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   Widget _buildHeader() {
     final titles = {
-      _Mode.signIn:    ('Welcome back',    'Sign in to your account'),
+      _Mode.signIn:    ('Welcome back',    'Sign in to your ViBE account'),
       _Mode.join:      ("Friend's Library", 'Got an invite code? Enter it below to access their shared music library.'),
       _Mode.ownServer: ('Connect Server',  'Use your own Jellyfin server'),
     };

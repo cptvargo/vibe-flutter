@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import '../providers.dart';
 import '../services/auth_service.dart';
@@ -90,6 +94,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: 'Invite Codes',
                   children: [
                     _InviteTile(theme: theme, server: _server),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _Section(
+                  theme: theme,
+                  title: 'Community',
+                  children: [
+                    _ActionTile(
+                      theme: theme,
+                      icon: Icons.chat_bubble_outline_rounded,
+                      label: 'Send Feedback',
+                      onTap: () => showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => _FeedbackSheet(theme: theme),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -905,6 +927,575 @@ class _AdminKeyTile extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+// ── Feedback sheet ────────────────────────────────────────────────────────────
+
+enum _FeedbackCategory {
+  bug, feature, playback, library, question, general;
+
+  String get label => switch (this) {
+    _FeedbackCategory.bug      => "Describe what happened - steps to reproduce, what you expected...",
+      _FeedbackCategory.feature  => "Describe the feature and why it would make ViBE better...",
+      _FeedbackCategory.playback => "What's happening? Skipping, not playing, wrong track order...",
+      _FeedbackCategory.library  => "Describe the library or server issue you're experiencing...",
+      _FeedbackCategory.question => "What's your question?",
+      _FeedbackCategory.general  => "Say anything - thoughts, appreciation, requests...",
+  };
+
+  IconData get icon => switch (this) {
+    _FeedbackCategory.bug      => Icons.bug_report_outlined,
+    _FeedbackCategory.feature  => Icons.lightbulb_outline,
+    _FeedbackCategory.playback => Icons.headphones_outlined,
+    _FeedbackCategory.library  => Icons.dns_outlined,
+    _FeedbackCategory.question => Icons.help_outline_rounded,
+    _FeedbackCategory.general  => Icons.favorite_border,
+  };
+}
+
+const _kVibeFaqs = [
+  (q: 'How do I add my Jellyfin server?', a: 'Sign out and tap "Connect My Server" on the login screen. Enter your Jellyfin URL and credentials — ViBE will authenticate and connect automatically.'),
+  (q: 'Why isn\'t my music showing up?', a: 'Make sure your Jellyfin server is online and reachable. Pull down to refresh on the Library tab. If the issue persists, try signing out and back in.'),
+  (q: 'How do I shuffle my music?', a: 'Tap the shuffle icon in the player controls at the bottom of the screen. Your shuffle preference is remembered even after closing the app.'),
+  (q: 'How do I invite a friend to my library?', a: 'Go to Settings → Invite Codes, tap Generate, then share the 6-character code. Your friend enters it on the Friend\'s Library tab when setting up ViBE.'),
+  (q: 'Does ViBE work offline?', a: 'ViBE streams from your Jellyfin server, so an active connection is required to play music. Cached artwork may appear offline, but audio needs the server.'),
+];
+
+class _FeedbackSheet extends StatefulWidget {
+  const _FeedbackSheet({required this.theme});
+  final VibeTheme theme;
+
+  @override
+  State<_FeedbackSheet> createState() => _FeedbackSheetState();
+}
+
+class _FeedbackSheetState extends State<_FeedbackSheet> {
+  _FeedbackCategory? _category;
+  bool _faqPassed = false;
+  bool _sending   = false;
+  bool _sent      = false;
+  String? _error;
+
+  final _messageCtrl = TextEditingController();
+  final _titleCtrl   = TextEditingController();
+
+  String _appVer  = '';
+  String _os      = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDiagnostics();
+  }
+
+  @override
+  void dispose() {
+    _messageCtrl.dispose();
+    _titleCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDiagnostics() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() {
+        _appVer = '${info.version}+${info.buildNumber}';
+        _os     = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+      });
+    } catch (_) {}
+  }
+
+  String _buildPayload() {
+    final sb = StringBuffer()
+      ..writeln('CATEGORY: ${_category!.label}');
+    if (_titleCtrl.text.trim().isNotEmpty) sb.writeln('TITLE: ${_titleCtrl.text.trim()}');
+    sb
+      ..writeln()
+      ..writeln(_messageCtrl.text.trim())
+      ..writeln()
+      ..writeln('────────────────────────')
+      ..writeln('App: ViBE $_appVer')
+      ..writeln('OS: $_os')
+      ..writeln('Time: ${DateTime.now().toIso8601String()}');
+    return sb.toString();
+  }
+
+  Future<void> _send() async {
+    if (_messageCtrl.text.trim().isEmpty || _sending) return;
+    setState(() { _sending = true; _error = null; });
+
+    // Update these with ViBE-specific EmailJS credentials when ready.
+    const serviceId  = 'service_k17g6zm';
+    const templateId = 'template_igh27g9';
+    const userId     = 'tTCVbghqW-ocRbMLd';
+
+    try {
+      final res = await http.post(
+        Uri.parse('https://api.emailjs.com/api/v1.0/email/send'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'service_id':  serviceId,
+          'template_id': templateId,
+          'user_id':     userId,
+          'template_params': {
+            'message': _buildPayload(),
+            'name':    'ViBE User',
+            'email':   'noreply@playvibemusic.com',
+          },
+        }),
+      );
+      if (mounted) {
+        if (res.statusCode == 200) {
+          setState(() { _sent = true; _sending = false; });
+        } else {
+          setState(() { _sending = false; _error = 'Could not send. Please try again.'; });
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() { _sending = false; _error = 'Network error. Check your connection and try again.'; });
+      }
+    }
+  }
+
+  void _selectCategory(_FeedbackCategory cat) => setState(() {
+    _category = cat; _faqPassed = false; _error = null;
+    _messageCtrl.clear(); _titleCtrl.clear();
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t   = widget.theme;
+    final bot = MediaQuery.paddingOf(context).bottom;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF12121E),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(color: Colors.white.withAlpha(0x0F)),
+      ),
+      child: Stack(
+        children: [
+          DraggableScrollableSheet(
+            initialChildSize: 0.92,
+            minChildSize: 0.5,
+            maxChildSize: 0.97,
+            expand: false,
+            builder: (_, ctrl) => Column(
+              children: [
+                // Handle bar
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 4),
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(0x22),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                // Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Send Feedback',
+                              style: TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.w700,
+                                color: t.textColor, letterSpacing: -0.4,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Every message is read and helps shape ViBE.',
+                              style: TextStyle(fontSize: 13, color: t.textFaint),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withAlpha(0x0D),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.close, size: 16, color: t.textFaint),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Divider(height: 1, thickness: 0.5, color: Colors.white.withAlpha(0x0F)),
+                // Scrollable body
+                Expanded(
+                  child: ListView(
+                    controller: ctrl,
+                    padding: EdgeInsets.fromLTRB(20, 20, 20, bot + 32),
+                    children: [
+                      _buildCategoryGrid(t),
+                      if (_category != null) ...[
+                        const SizedBox(height: 24),
+                        ..._buildForm(t),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_sent) _SentOverlay(t: t, onClose: () => Navigator.pop(context)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryGrid(VibeTheme t) {
+    final cats = _FeedbackCategory.values;
+    return Column(
+      children: [
+        for (int i = 0; i < cats.length; i += 2) ...[
+          if (i > 0) const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: _CategoryChip(cat: cats[i], selected: _category == cats[i], t: t, onTap: () => _selectCategory(cats[i]))),
+              const SizedBox(width: 10),
+              Expanded(child: i + 1 < cats.length
+                  ? _CategoryChip(cat: cats[i + 1], selected: _category == cats[i + 1], t: t, onTap: () => _selectCategory(cats[i + 1]))
+                  : const SizedBox()),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _buildForm(VibeTheme t) {
+    final widgets = <Widget>[];
+    final cat = _category!;
+
+    // FAQ gate
+    if (cat == _FeedbackCategory.question && !_faqPassed) {
+      for (final faq in _kVibeFaqs) {
+        widgets.add(_FaqItem(question: faq.q, answer: faq.a, t: t));
+        widgets.add(const SizedBox(height: 8));
+      }
+      widgets.add(_SheetButton(
+        label: 'My question isn\'t here',
+        outline: true,
+        t: t,
+        onTap: () => setState(() => _faqPassed = true),
+      ));
+      return widgets;
+    }
+
+    // Title for feature requests
+    if (cat == _FeedbackCategory.feature) {
+      widgets.add(_SheetField(ctrl: _titleCtrl, hint: 'Short title for your idea…', t: t, minLines: 1, maxLines: 1));
+      widgets.add(const SizedBox(height: 10));
+    }
+
+    final hint = switch (cat) {
+      _FeedbackCategory.bug      => "Describe what happened - steps to reproduce, what you expected...",
+      _FeedbackCategory.feature  => "Describe the feature and why it would make ViBE better...",
+      _FeedbackCategory.playback => "What's happening? Skipping, not playing, wrong track order...",
+      _FeedbackCategory.library  => "Describe the library or server issue you're experiencing...",
+      _FeedbackCategory.question => "What's your question?",
+      _FeedbackCategory.general  => "Say anything - thoughts, appreciation, requests...",
+    };
+
+    widgets.add(_SheetField(ctrl: _messageCtrl, hint: hint, t: t,
+      minLines: cat == _FeedbackCategory.general ? 6 : 4, maxLines: 10));
+
+    if (_error != null) {
+      widgets.add(const SizedBox(height: 10));
+      widgets.add(Text(_error!, style: const TextStyle(fontSize: 12, color: Color(0xFFE57373))));
+    }
+
+    widgets.add(const SizedBox(height: 14));
+
+    widgets.add(ValueListenableBuilder(
+      valueListenable: _messageCtrl,
+      builder: (context, val, child) => _SheetButton(
+        label: _sending ? 'Sending…' : 'Send',
+        t: t,
+        onTap: (val.text.trim().isNotEmpty && !_sending) ? _send : null,
+      ),
+    ));
+
+    widgets.add(const SizedBox(height: 14));
+    widgets.add(Text(
+      'ViBE is independently developed. While I may not reply to every message, I read everything.',
+      style: TextStyle(fontSize: 11, height: 1.6, color: t.textFaint.withAlpha(0xAA)),
+    ));
+
+    return widgets;
+  }
+}
+
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({required this.cat, required this.selected, required this.t, required this.onTap});
+  final _FeedbackCategory cat;
+  final bool selected;
+  final VibeTheme t;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () { HapticFeedback.selectionClick(); onTap(); },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? t.accentBright.withAlpha(0x1A) : Colors.white.withAlpha(0x07),
+          border: Border.all(
+            color: selected ? t.accentBright.withAlpha(0x99) : Colors.white.withAlpha(0x14),
+            width: selected ? 1.5 : 1.0,
+          ),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(cat.icon, size: 20, color: selected ? t.accentBright : t.textFaint),
+            const SizedBox(height: 8),
+            Text(
+              cat.label,
+              style: TextStyle(
+                fontSize: 12, height: 1.3,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected ? t.accentBright : t.textColor.withAlpha(0xCC),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FaqItem extends StatefulWidget {
+  const _FaqItem({required this.question, required this.answer, required this.t});
+  final String question;
+  final String answer;
+  final VibeTheme t;
+
+  @override
+  State<_FaqItem> createState() => _FaqItemState();
+}
+
+class _FaqItemState extends State<_FaqItem> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return GestureDetector(
+      onTap: () { HapticFeedback.selectionClick(); setState(() => _open = !_open); },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _open ? t.accentBright.withAlpha(0x0D) : Colors.white.withAlpha(0x07),
+          border: Border.all(
+            color: _open ? t.accentBright.withAlpha(0x44) : Colors.white.withAlpha(0x10),
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Expanded(child: Text(widget.question,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: t.textColor, height: 1.4))),
+              const SizedBox(width: 8),
+              Icon(_open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                size: 18, color: t.textFaint),
+            ]),
+            if (_open) ...[
+              const SizedBox(height: 10),
+              Text(widget.answer,
+                style: TextStyle(fontSize: 13, height: 1.65, color: t.textColor.withAlpha(0x99))),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetField extends StatelessWidget {
+  const _SheetField({required this.ctrl, required this.hint, required this.t, this.minLines = 4, this.maxLines = 10});
+  final TextEditingController ctrl;
+  final String hint;
+  final VibeTheme t;
+  final int minLines;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(0x07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withAlpha(0x14)),
+      ),
+      child: TextField(
+        controller: ctrl,
+        minLines: minLines,
+        maxLines: maxLines,
+        keyboardAppearance: Brightness.dark,
+        style: TextStyle(fontSize: 15, height: 1.65, color: t.textColor),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(fontSize: 15, fontStyle: FontStyle.italic, color: t.textFaint.withAlpha(0x88)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.all(16),
+        ),
+        cursorColor: t.accentBright,
+        onChanged: (_) {},
+      ),
+    );
+  }
+}
+
+class _SheetButton extends StatelessWidget {
+  const _SheetButton({required this.label, required this.t, this.onTap, this.outline = false});
+  final String label;
+  final VibeTheme t;
+  final VoidCallback? onTap;
+  final bool outline;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = onTap != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        decoration: BoxDecoration(
+          color: outline
+              ? Colors.transparent
+              : active ? t.accentBright.withAlpha(0x22) : Colors.white.withAlpha(0x07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: outline
+                ? Colors.white.withAlpha(0x18)
+                : active ? t.accentBright.withAlpha(0x66) : Colors.white.withAlpha(0x10),
+            width: active && !outline ? 1.5 : 1.0,
+          ),
+        ),
+        child: Center(child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 0.3,
+            color: outline
+                ? t.textColor.withAlpha(0xBB)
+                : active ? t.accentBright : t.textFaint,
+          ),
+        )),
+      ),
+    );
+  }
+}
+
+class _SentOverlay extends StatefulWidget {
+  const _SentOverlay({required this.t, required this.onClose});
+  final VibeTheme t;
+  final VoidCallback onClose;
+
+  @override
+  State<_SentOverlay> createState() => _SentOverlayState();
+}
+
+class _SentOverlayState extends State<_SentOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl  = AnimationController(vsync: this, duration: const Duration(milliseconds: 650));
+    _scale = CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut);
+    _fade  = CurvedAnimation(parent: _ctrl, curve: const Interval(0, 0.45, curve: Curves.easeOut));
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF12121E),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: FadeTransition(
+        opacity: _fade,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 36),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ScaleTransition(
+                  scale: _scale,
+                  child: Container(
+                    width: 72, height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: t.accentBright.withAlpha(0x1A),
+                      border: Border.all(color: t.accentBright.withAlpha(0x55), width: 1.5),
+                    ),
+                    child: Icon(Icons.check_rounded, size: 32, color: t.accentBright),
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  'Message sent',
+                  style: TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4, color: t.textColor,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Thanks for taking the time. Your feedback helps make ViBE better for everyone.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, height: 1.7, color: t.textFaint),
+                ),
+                const SizedBox(height: 40),
+                GestureDetector(
+                  onTap: widget.onClose,
+                  child: Text(
+                    'Done',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.accentBright),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

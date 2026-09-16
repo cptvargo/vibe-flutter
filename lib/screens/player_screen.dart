@@ -1034,9 +1034,9 @@ class _ContentState extends ConsumerState<_Content> {
                                       height: _kCompactHeaderH,
                                       child: Row(
                                         children: [
-                                          // Spacer for [C] art widget
-                                          const SizedBox(
-                                              width: _kArtCompactLeft + _kArtCompact + 12),
+                                          // Spacer tracks artwork's live position during
+                                          // animation so text never overlaps the artwork.
+                                          SizedBox(width: artL + artSz + 12),
                                           // Title + artist
                                           Expanded(
                                             child: Column(

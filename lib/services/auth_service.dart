@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/jellyfin_config.dart';
 import '../config/vibe_config.dart';
@@ -280,6 +281,9 @@ class AuthService {
     if (user == null) return;
     await supabase.rpc('delete_user');
     await supabase.auth.signOut();
+    // Reset to first-time login view — account is gone so Own Server shows again.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('vibe_has_setup');
   }
 
   static String _randomCode() {
