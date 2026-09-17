@@ -168,8 +168,17 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       final res = await AuthService.signIn(email: email, password: vPass);
       if (res.user == null) { _setError('Invalid email or password.'); return; }
-      // Restore Jellyfin credentials from Supabase user metadata
+      // Restore Jellyfin credentials from Supabase user metadata (or Hive cache)
       await JellyfinConfig.load();
+      // Always persist resolved credentials to Hive so cold-start doesn't
+      // need the Supabase round-trip and the user stays logged in.
+      await JellyfinConfig.save(
+        serverUrl: JellyfinConfig.serverUrl,
+        apiKey:    JellyfinConfig.apiKey,
+        userId:    JellyfinConfig.userId,
+        vibeLib:   JellyfinConfig.vibeLib,
+        aiLib:     JellyfinConfig.aiLib,
+      );
       connectionNotifier.connect();
     } on AuthException catch (e) {
       if (mounted) _setError(e.message);
