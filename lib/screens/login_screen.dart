@@ -121,6 +121,103 @@ class _LoginScreenState extends State<LoginScreen>
 
   void _setError(String msg) => setState(() { _error = msg; _loading = false; });
 
+  void _showForgotPassword(BuildContext context) {
+    final ctrl = TextEditingController(text: _emailCtrl.text.trim());
+    var sending = false;
+    var sent    = false;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF12121E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24,
+            24 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Reset Password',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+              const SizedBox(height: 8),
+              const Text(
+                "Enter your email and we'll send you a link to set a new password.",
+                style: TextStyle(color: _kTextDim, fontSize: 13, height: 1.5),
+              ),
+              const SizedBox(height: 20),
+              if (!sent) ...[
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType: TextInputType.emailAddress,
+                  keyboardAppearance: Brightness.dark,
+                  autocorrect: false,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  decoration: InputDecoration(
+                    labelText: 'Email',
+                    labelStyle: const TextStyle(color: _kTextDim, fontSize: 13),
+                    filled: true,
+                    fillColor: const Color(0xFF0E0E1C),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0x22FFFFFF)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: _kAccent, width: 1.5),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  onPressed: sending ? null : () async {
+                    final email = ctrl.text.trim();
+                    if (email.isEmpty) return;
+                    setSt(() => sending = true);
+                    try {
+                      await AuthService.resetPassword(email);
+                      setSt(() { sending = false; sent = true; });
+                    } catch (_) {
+                      setSt(() => sending = false);
+                    }
+                  },
+                  child: sending
+                      ? const SizedBox(width: 18, height: 18,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Send Reset Link', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ] else ...[
+                const Icon(Icons.check_circle_outline, color: Color(0xFF4CAF50), size: 40),
+                const SizedBox(height: 12),
+                const Text(
+                  'Reset link sent! Check your email and tap the link to set a new password.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _kTextDim, fontSize: 13, height: 1.5),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Done', style: TextStyle(color: _kAccentLight)),
+                ),
+              ],
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
   Future<void> _checkCode(String raw) async {
     final code = raw.toUpperCase().trim();
     if (code.length < 4) {
@@ -432,17 +529,21 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           if (_codeValid) ...[
             const SizedBox(height: 20),
-            _SectionLabel(icon: Icons.person_outline, label: 'Your account on their server'),
+            _SectionLabel(icon: Icons.person_outline, label: 'Create your account on their server'),
+            const SizedBox(height: 4),
+            const Text(
+              "We'll create your Jellyfin account automatically.",
+              style: TextStyle(fontSize: 11, color: _kTextDim),
+            ),
             const SizedBox(height: 12),
             _Field(
               controller: _jellyfinUserCtrl,
-              label: 'Jellyfin Username',
-              hint: 'What you\'ll be called on the server',
+              label: 'Choose a username',
             ),
             const SizedBox(height: 12),
             _Field(
               controller: _jellyfinPassCtrl,
-              label: 'Jellyfin Password',
+              label: 'Choose a password',
               obscure: _jellyfinObscure,
               suffix: _ObscureToggle(
                 obscure: _jellyfinObscure,
@@ -467,6 +568,17 @@ class _LoginScreenState extends State<LoginScreen>
             suffix: _ObscureToggle(
               obscure: _vibeObscure,
               onTap: () => setState(() => _vibeObscure = !_vibeObscure),
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => _showForgotPassword(context),
+            child: const Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Forgot password?',
+                style: TextStyle(fontSize: 13, color: _kAccentLight),
+              ),
             ),
           ),
         ];
