@@ -68,15 +68,17 @@ class _ConnectServerScreenState extends State<ConnectServerScreen> {
         if (mounted) setState(() { _loading = false; _error = 'Could not connect. Check your URL and credentials.'; });
         return;
       }
-      // 2. Create ViBE account
-      final res = await AuthService.signUp(
+      // 2. Create ViBE account (stores Jellyfin creds in Supabase metadata
+      //    so Sign In can restore them without re-entering Jellyfin credentials)
+      final res = await AuthService.signUpWithServer(
         email: email, password: vPass, displayName: name,
+        serverUrl: url, jellyfinToken: creds.token, jellyfinUserId: creds.userId,
       );
       if (res.user == null) {
         if (mounted) setState(() { _loading = false; _error = 'Could not create ViBE account. Try a different email.'; });
         return;
       }
-      // 3. Save credentials, mark account as set up, and exit demo mode
+      // 3. Save credentials to Hive, mark account as set up, and exit demo mode
       await JellyfinConfig.save(
         serverUrl: url, apiKey: creds.token, userId: creds.userId,
       );

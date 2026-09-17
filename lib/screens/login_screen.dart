@@ -160,33 +160,16 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _signIn() async {
     final email = _emailCtrl.text.trim();
     final vPass = _vibePassCtrl.text;
-    final jUser = _jellyfinUserCtrl.text.trim();
-    final jPass = _jellyfinPassCtrl.text;
 
     if (email.isEmpty) { _setError('Enter your email.'); return; }
     if (vPass.isEmpty) { _setError('Enter your ViBE password.'); return; }
-    if (jUser.isEmpty) { _setError('Enter your Jellyfin username.'); return; }
-    if (jPass.isEmpty) { _setError('Enter your Jellyfin password.'); return; }
 
     setState(() { _loading = true; _error = null; });
     try {
-      // Sign in to ViBE (Supabase)
       final res = await AuthService.signIn(email: email, password: vPass);
-      if (res.user == null) {
-        _setError('Invalid email or password.');
-        return;
-      }
-      // Fetch server URL from the user's ViBE profile
-      final serverUrl = await AuthService.resolveServerUrl();
-      // Re-authenticate with Jellyfin for a fresh token
-      final creds = await AuthService.authenticateJellyfin(
-        serverUrl: serverUrl, username: jUser, password: jPass,
-      );
-      if (creds == null) {
-        _setError('Could not connect to your Jellyfin server. Check your username and password.');
-        return;
-      }
-      await JellyfinConfig.save(serverUrl: serverUrl, apiKey: creds.token, userId: creds.userId);
+      if (res.user == null) { _setError('Invalid email or password.'); return; }
+      // Restore Jellyfin credentials from Supabase user metadata
+      await JellyfinConfig.load();
       connectionNotifier.connect();
     } on AuthException catch (e) {
       if (mounted) _setError(e.message);
@@ -220,15 +203,17 @@ class _LoginScreenState extends State<LoginScreen>
         _setError('Could not connect. Check your server URL and credentials.');
         return;
       }
-      // 2. Create ViBE account (Supabase — used for profile, invites, settings)
-      final res = await AuthService.signUp(
+      // 2. Create ViBE account (stores Jellyfin creds in Supabase metadata
+      //    so Sign In can restore them without re-entering Jellyfin credentials)
+      final res = await AuthService.signUpWithServer(
         email: email, password: vPass, displayName: name,
+        serverUrl: url, jellyfinToken: creds.token, jellyfinUserId: creds.userId,
       );
       if (res.user == null) {
         _setError('Could not create your ViBE account. Try a different email.');
         return;
       }
-      // 3. Save Jellyfin credentials, mark account as set up, and connect
+      // 3. Save Jellyfin credentials to Hive, mark account as set up, and connect
       await JellyfinConfig.save(serverUrl: url, apiKey: creds.token, userId: creds.userId);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('vibe_has_setup', true);
@@ -460,8 +445,6 @@ class _LoginScreenState extends State<LoginScreen>
 
       case _Mode.signIn:
         return [
-          _SectionLabel(icon: Icons.account_circle_outlined, label: 'Your ViBE account'),
-          const SizedBox(height: 12),
           _Field(
             controller: _emailCtrl,
             label: 'Email',
@@ -475,20 +458,6 @@ class _LoginScreenState extends State<LoginScreen>
             suffix: _ObscureToggle(
               obscure: _vibeObscure,
               onTap: () => setState(() => _vibeObscure = !_vibeObscure),
-            ),
-          ),
-          const SizedBox(height: 20),
-          _SectionLabel(icon: Icons.dns_outlined, label: 'Your Jellyfin server'),
-          const SizedBox(height: 12),
-          _Field(controller: _jellyfinUserCtrl, label: 'Jellyfin Username'),
-          const SizedBox(height: 12),
-          _Field(
-            controller: _jellyfinPassCtrl,
-            label: 'Jellyfin Password',
-            obscure: _jellyfinObscure,
-            suffix: _ObscureToggle(
-              obscure: _jellyfinObscure,
-              onTap: () => setState(() => _jellyfinObscure = !_jellyfinObscure),
             ),
           ),
         ];
