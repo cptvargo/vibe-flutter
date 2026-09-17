@@ -67,6 +67,8 @@ workflows:
           lib   = os.environ["VIBE_LIBRARY_ID"].strip()
           ailib = os.environ["VIBE_AI_LIBRARY_ID"].strip()
           cs    = os.environ["VIBE_COLOR_SERVER"].strip()
+          da    = os.environ["VIBE_DEMO_API_KEY"].strip()
+          du    = os.environ["VIBE_DEMO_USER_ID"].strip()
           su    = os.environ["SUPABASE_URL"].strip()
           sa    = os.environ["SUPABASE_ANON_KEY"].strip()
           content = (
@@ -77,6 +79,8 @@ workflows:
             f"  static const String vibeLibrary  = '{lib}';\n"
             f"  static const String aiLibrary    = '{ailib}';\n"
             f"  static const String colorServer  = '{cs}';\n"
+            f"  static const String demoApiKey   = '{da}';\n"
+            f"  static const String demoUserId   = '{du}';\n"
             f"  static const String supabaseUrl  = '{su}';\n"
             f"  static const String supabaseAnon = '{sa}';\n"
             "}\n"
@@ -149,6 +153,8 @@ workflows:
           lib   = os.environ["VIBE_LIBRARY_ID"].strip()
           ailib = os.environ["VIBE_AI_LIBRARY_ID"].strip()
           cs    = os.environ["VIBE_COLOR_SERVER"].strip()
+          da    = os.environ["VIBE_DEMO_API_KEY"].strip()
+          du    = os.environ["VIBE_DEMO_USER_ID"].strip()
           su    = os.environ["SUPABASE_URL"].strip()
           sa    = os.environ["SUPABASE_ANON_KEY"].strip()
           content = (
@@ -159,6 +165,8 @@ workflows:
             f"  static const String vibeLibrary  = '{lib}';\n"
             f"  static const String aiLibrary    = '{ailib}';\n"
             f"  static const String colorServer  = '{cs}';\n"
+            f"  static const String demoApiKey   = '{da}';\n"
+            f"  static const String demoUserId   = '{du}';\n"
             f"  static const String supabaseUrl  = '{su}';\n"
             f"  static const String supabaseAnon = '{sa}';\n"
             "}\n"
