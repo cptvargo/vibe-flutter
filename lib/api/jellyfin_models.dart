@@ -1,5 +1,10 @@
 import '../api/jellyfin_api.dart';
 
+// Strips (feat. X) / (ft. X) / [feat. X] from a track title for display.
+// The full title is kept in raw Jellyfin data; artist line already shows features.
+String _stripFeat(String t) =>
+    t.replaceAll(RegExp(r'\s*[\(\[](feat|ft)\.?\s+[^\)\]]+[\)\]]', caseSensitive: false), '').trim();
+
 // A track ready for playback — equivalent to toTrackPlayerTrack() in RN
 class VibeTrack {
   final String id;
@@ -82,7 +87,7 @@ class VibeTrack {
     return VibeTrack(
       id:          j['Id'] as String,
       url:         JellyfinApi.streamUrl(j['Id'] as String),
-      title:       ((j['Name'] as String?) ?? 'Unknown').split(' | ').first.trim(),
+      title:       _stripFeat(((j['Name'] as String?) ?? 'Unknown').split(' | ').first.trim()),
       artist:      ((j['Artists'] as List?)?.cast<String>() ?? []).isNotEmpty
                      ? ((j['Artists'] as List).cast<String>()).join(' & ')
                      : j['AlbumArtist'] as String? ?? 'Unknown',
