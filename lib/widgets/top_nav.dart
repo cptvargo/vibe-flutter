@@ -4,19 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../theme/vibe_theme.dart';
 
-const _kTabs = [
-  (id: 'home',     label: 'Home',     icon: Icons.home_outlined,           activeIcon: Icons.home),
-  (id: 'search',   label: 'Search',   icon: Icons.search_outlined,         activeIcon: Icons.search),
-  (id: 'library',  label: 'Library',  icon: Icons.library_music_outlined,  activeIcon: Icons.library_music),
-  (id: 'offline',  label: 'Offline',  icon: Icons.offline_pin_outlined,    activeIcon: Icons.offline_pin),
-  (id: 'settings', label: 'Settings', icon: Icons.person_outline,          activeIcon: Icons.person),
-];
+typedef _TabDef = ({String id, String label, IconData icon, IconData activeIcon});
 
 class TopNav extends ConsumerWidget {
   final String activeTab;
+  final List<_TabDef> tabs;
   final ValueChanged<String> onTabChange;
 
-  const TopNav({super.key, required this.activeTab, required this.onTabChange});
+  const TopNav({super.key, required this.activeTab, required this.tabs, required this.onTabChange});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -37,7 +32,7 @@ class TopNav extends ConsumerWidget {
           ),
           child: SafeArea(
             bottom: false,
-            child: _NavRow(theme: theme, activeTab: activeTab, onTabChange: onTabChange),
+            child: _NavRow(theme: theme, activeTab: activeTab, tabs: tabs, onTabChange: onTabChange),
           ),
         ),
       ),
@@ -48,9 +43,10 @@ class TopNav extends ConsumerWidget {
 class _NavRow extends StatelessWidget {
   final VibeTheme theme;
   final String activeTab;
+  final List<_TabDef> tabs;
   final ValueChanged<String> onTabChange;
 
-  const _NavRow({required this.theme, required this.activeTab, required this.onTabChange});
+  const _NavRow({required this.theme, required this.activeTab, required this.tabs, required this.onTabChange});
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +89,7 @@ class _NavRow extends StatelessWidget {
           ),
         ),
         // Tabs
-        ..._kTabs.map((tab) {
+        ...tabs.map((tab) {
           final isActive = activeTab == tab.id;
           final color = isActive
               ? theme.accentBright

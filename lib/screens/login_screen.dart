@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/auth_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/jellyfin_config.dart';
+import '../providers/connection_notifier.dart';
+import '../services/auth_service.dart';
 import '../config/vibe_config.dart';
 
-// Login screen — three paths:
-//   sign_in      → existing users (email + password)
-//   join         → friends with an invite code
-//   own_server   → public users connecting their own Jellyfin
+// Three paths into ViBE:
+//   tryVibe       → demo mode, AI music only, no account
+//   friendsLibrary → invite code + Jellyfin credentials for a shared server
+//   ownServer     → your own Jellyfin server
 
-enum _Mode { signIn, join, ownServer }
+enum _Mode { tryVibe, friendsLibrary, ownServer, signIn }
 
 const _kBg          = Color(0xFF080810);
 const _kSurface     = Color(0xFF12121E);
@@ -30,25 +32,22 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  _Mode _mode = _Mode.signIn;
+  _Mode _mode = _Mode.tryVibe;
 
-  final _emailCtrl         = TextEditingController();
-  final _passwordCtrl      = TextEditingController();
-  final _nameCtrl          = TextEditingController();
-  final _codeCtrl          = TextEditingController();
-  final _serverCtrl        = TextEditingController();
-  final _jellyfinUserCtrl  = TextEditingController();
-  final _jellyfinPassCtrl  = TextEditingController();
+  final _serverCtrl       = TextEditingController();
+  final _jellyfinUserCtrl = TextEditingController();
+  final _jellyfinPassCtrl = TextEditingController();
+  final _codeCtrl         = TextEditingController();
+  final _nameCtrl         = TextEditingController();
+  final _emailCtrl        = TextEditingController();
+  final _vibePassCtrl     = TextEditingController();
 
-  bool _loading         = false;
-  bool _obscure         = true;
-  bool _jellyfinObscure = true;
-  bool _hasSetupBefore  = false; // drives which tabs are shown
+  bool    _loading          = false;
+  bool    _jellyfinObscure  = true;
+  bool    _vibeObscure      = true;
+  bool    _hasSetup         = false;
   String? _error;
 
-  static const _setupKey = 'vibe_has_setup';
-
-  Map<String, dynamic>? _validatedInvite;
   bool _codeChecking = false;
   bool _codeValid    = false;
 
@@ -58,40 +57,34 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void initState() {
     super.initState();
-    _fadeCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 220),
-    );
+    _fadeCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
-    _loadSetupState();
+    _loadSetupFlag();
   }
 
-  Future<void> _loadSetupState() async {
-    final prefs    = await SharedPreferences.getInstance();
-    final hasSetup = prefs.getBool(_setupKey) ?? false;
-    if (!mounted) return;
-    setState(() {
-      _hasSetupBefore = hasSetup;
-      _mode = hasSetup ? _Mode.signIn : _Mode.ownServer;
-    });
-  }
-
-  Future<void> _markSetupComplete() async {
+  Future<void> _loadSetupFlag() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_setupKey, true);
+    if (!mounted) return;
+    final has = prefs.getBool('vibe_has_setup') ?? false;
+    setState(() {
+      _hasSetup = has;
+      // If we loaded on the ownServer tab but the user already has an account,
+      // silently switch to signIn so the tab and content stay in sync.
+      if (has && _mode == _Mode.ownServer) _mode = _Mode.signIn;
+    });
   }
 
   @override
   void dispose() {
     _fadeCtrl.dispose();
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
-    _nameCtrl.dispose();
-    _codeCtrl.dispose();
     _serverCtrl.dispose();
     _jellyfinUserCtrl.dispose();
     _jellyfinPassCtrl.dispose();
+    _codeCtrl.dispose();
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _vibePassCtrl.dispose();
     super.dispose();
   }
 
@@ -100,21 +93,20 @@ class _LoginScreenState extends State<LoginScreen>
     _fadeCtrl.reverse().then((_) async {
       if (!mounted) return;
       setState(() {
-        _mode = mode;
+        _mode  = mode;
         _error = null;
         _codeValid = false;
-        _validatedInvite = null;
         _codeCtrl.clear();
         _jellyfinUserCtrl.clear();
         _jellyfinPassCtrl.clear();
+        _nameCtrl.clear();
+        _emailCtrl.clear();
+        _vibePassCtrl.clear();
       });
       _fadeCtrl.forward();
-      if (mode == _Mode.join) {
+      if (mode == _Mode.friendsLibrary) {
         final clip = await Clipboard.getData(Clipboard.kTextPlain);
         final raw  = clip?.text?.toUpperCase().trim() ?? '';
-        // Only auto-fill if clipboard looks like a real ViBE invite code —
-        // either VIBE-XXXXXX format or exactly 6 bare alphanumeric characters.
-        // Prevents stale clipboard content from polluting the field.
         final stripped = raw.startsWith('VIBE-')
             ? raw.substring(5).replaceAll(RegExp(r'[^A-Z0-9]'), '')
             : raw.replaceAll(RegExp(r'[^A-Z0-9]'), '');
@@ -132,170 +124,148 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _checkCode(String raw) async {
     final code = raw.toUpperCase().trim();
     if (code.length < 4) {
-      setState(() { _codeValid = false; _validatedInvite = null; });
+      setState(() => _codeValid = false);
       return;
     }
     setState(() => _codeChecking = true);
     try {
       final data = await AuthService.redeemInviteCode(code);
-      if (mounted) {
-        setState(() {
-          _codeChecking    = false;
-          _codeValid       = data != null;
-          _validatedInvite = data;
-          _error = data == null ? 'Invalid or expired invite code.' : null;
-        });
-      }
+      if (mounted) setState(() {
+        _codeChecking = false;
+        _codeValid    = data != null;
+        _error = data == null ? 'Invalid or expired invite code.' : null;
+      });
     } catch (_) {
       if (mounted) setState(() { _codeChecking = false; _codeValid = false; });
     }
   }
 
   Future<void> _submit() async {
-    final email    = _emailCtrl.text.trim();
-    final password = _passwordCtrl.text;
-    final name     = _nameCtrl.text.trim();
+    switch (_mode) {
+      case _Mode.tryVibe:
+        connectionNotifier.enterDemo();
+        return;
 
-    if (email.isEmpty || password.isEmpty) {
-      _setError('Email and password are required.');
-      return;
-    }
-    if (_mode != _Mode.signIn && name.isEmpty) {
-      _setError('Please enter your name.');
-      return;
-    }
-    if (_mode == _Mode.join && !_codeValid) {
-      _setError('Please enter a valid invite code first.');
-      return;
-    }
+      case _Mode.ownServer:
+        await _connectOwnServer();
 
-    // Validate Jellyfin fields for join mode
-    if (_mode == _Mode.join) {
-      if (_jellyfinUserCtrl.text.trim().isEmpty) {
-        _setError('Please enter your desired Jellyfin username.');
-        return;
-      }
-      if (_jellyfinPassCtrl.text.isEmpty) {
-        _setError('Please enter your desired Jellyfin password.');
-        return;
-      }
-    }
+      case _Mode.friendsLibrary:
+        await _joinFriendsLibrary();
 
-    // Validate Jellyfin fields for server-setup modes
-    if (_mode == _Mode.ownServer) {
-      if (_serverCtrl.text.trim().isEmpty) {
-        _setError('Please enter your Jellyfin server URL.');
-        return;
-      }
-      if (_jellyfinUserCtrl.text.trim().isEmpty) {
-        _setError('Please enter your Jellyfin username.');
-        return;
-      }
-      if (_jellyfinPassCtrl.text.isEmpty) {
-        _setError('Please enter your Jellyfin password.');
-        return;
-      }
+      case _Mode.signIn:
+        await _signIn();
     }
+  }
+
+  Future<void> _signIn() async {
+    final email = _emailCtrl.text.trim();
+    final vPass = _vibePassCtrl.text;
+    final jUser = _jellyfinUserCtrl.text.trim();
+    final jPass = _jellyfinPassCtrl.text;
+
+    if (email.isEmpty) { _setError('Enter your email.'); return; }
+    if (vPass.isEmpty) { _setError('Enter your ViBE password.'); return; }
+    if (jUser.isEmpty) { _setError('Enter your Jellyfin username.'); return; }
+    if (jPass.isEmpty) { _setError('Enter your Jellyfin password.'); return; }
+
     setState(() { _loading = true; _error = null; });
-
     try {
-      if (_mode == _Mode.signIn) {
-        final res = await AuthService.signIn(email: email, password: password);
-        if (res.user == null && mounted) {
-          _setError('Sign in failed. Check your credentials.');
-          return;
-        }
-        await _markSetupComplete();
-        // JellyfinConfig loads automatically via auth state listener
+      // Sign in to ViBE (Supabase)
+      final res = await AuthService.signIn(email: email, password: vPass);
+      if (res.user == null) {
+        _setError('Invalid email or password.');
         return;
       }
-
-      if (_mode == _Mode.ownServer) {
-        final url = _serverCtrl.text.trim().replaceAll(RegExp(r'/$'), '');
-        setState(() => _error = null);
-
-        // Verify Jellyfin credentials before creating the ViBE account
-        final creds = await AuthService.authenticateJellyfin(
-          serverUrl: url,
-          username:  _jellyfinUserCtrl.text.trim(),
-          password:  _jellyfinPassCtrl.text,
-        );
-        if (creds == null) {
-          if (mounted) {
-            _setError('Could not connect to your Jellyfin server. '
-                'Check the URL and credentials.');
-          }
-          return;
-        }
-
-        // Create ViBE account with Jellyfin credentials embedded in metadata
-        final res = await AuthService.signUpWithServer(
-          email:          email,
-          password:       password,
-          displayName:    name,
-          serverUrl:      url,
-          jellyfinToken:  creds.token,
-          jellyfinUserId: creds.userId,
-        );
-        if (res.user == null && mounted) {
-          _setError('Could not create account. Try again.');
-          return;
-        }
-
-        // Configure JellyfinConfig immediately so the app works right away
-        await JellyfinConfig.save(
-          serverUrl: url,
-          apiKey:    creds.token,
-          userId:    creds.userId,
-        );
-        await _markSetupComplete();
+      // Fetch server URL from the user's ViBE profile
+      final serverUrl = await AuthService.resolveServerUrl();
+      // Re-authenticate with Jellyfin for a fresh token
+      final creds = await AuthService.authenticateJellyfin(
+        serverUrl: serverUrl, username: jUser, password: jPass,
+      );
+      if (creds == null) {
+        _setError('Could not connect to your Jellyfin server. Check your username and password.');
         return;
       }
-
-      if (_mode == _Mode.join) {
-        // Create Jellyfin account via edge function first
-        final jellyfinResult = await AuthService.createJellyfinAccountForInvite(
-          inviteCode: _codeCtrl.text.trim(),
-          username:   _jellyfinUserCtrl.text.trim(),
-          password:   _jellyfinPassCtrl.text,
-        );
-
-        // Create ViBE account with Jellyfin credentials embedded
-        final res = await AuthService.signUpWithInviteCode(
-          email:          email,
-          password:       password,
-          displayName:    name,
-          inviteData:     _validatedInvite!,
-          jellyfinToken:  jellyfinResult['jellyfin_token'] as String?,
-          jellyfinUserId: jellyfinResult['jellyfin_user_id'] as String?,
-        );
-        if (res.user == null && mounted) {
-          _setError('Could not create account. Try again.');
-          return;
-        }
-
-        // Configure Jellyfin immediately so the app works right away.
-        // Join flow always connects to the managed ViBE server, so library
-        // IDs are always set so users only see the scoped library.
-        final serverUrl = jellyfinResult['server_url'] as String;
-        final token     = jellyfinResult['jellyfin_token'] as String;
-        final userId    = jellyfinResult['jellyfin_user_id'] as String;
-        await JellyfinConfig.save(
-          serverUrl: serverUrl,
-          apiKey:    token,
-          userId:    userId,
-          vibeLib:   VibeConfig.vibeLibrary,
-          aiLib:     VibeConfig.aiLibrary,
-        );
-        await AuthService.saveJellyfinCredentials(
-          serverUrl: serverUrl, token: token, userId: userId,
-        );
-        await _markSetupComplete();
-      }
+      await JellyfinConfig.save(serverUrl: serverUrl, apiKey: creds.token, userId: creds.userId);
+      connectionNotifier.connect();
+    } on AuthException catch (e) {
+      if (mounted) _setError(e.message);
     } on Exception catch (e) {
       if (mounted) _setError(e.toString().replaceAll(RegExp(r'^Exception: '), ''));
     }
-    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _connectOwnServer() async {
+    final url   = _serverCtrl.text.trim().replaceAll(RegExp(r'/$'), '');
+    final jUser = _jellyfinUserCtrl.text.trim();
+    final jPass = _jellyfinPassCtrl.text;
+    final name  = _nameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final vPass = _vibePassCtrl.text;
+
+    if (url.isEmpty)   { _setError('Enter your Jellyfin server URL.'); return; }
+    if (jUser.isEmpty) { _setError('Enter your Jellyfin username.'); return; }
+    if (jPass.isEmpty) { _setError('Enter your Jellyfin password.'); return; }
+    if (name.isEmpty)  { _setError('Enter your name.'); return; }
+    if (email.isEmpty) { _setError('Enter an email for your ViBE account.'); return; }
+    if (vPass.isEmpty) { _setError('Enter a password for your ViBE account.'); return; }
+
+    setState(() { _loading = true; _error = null; });
+    try {
+      // 1. Validate Jellyfin credentials first
+      final creds = await AuthService.authenticateJellyfin(
+        serverUrl: url, username: jUser, password: jPass,
+      );
+      if (creds == null) {
+        _setError('Could not connect. Check your server URL and credentials.');
+        return;
+      }
+      // 2. Create ViBE account (Supabase — used for profile, invites, settings)
+      final res = await AuthService.signUp(
+        email: email, password: vPass, displayName: name,
+      );
+      if (res.user == null) {
+        _setError('Could not create your ViBE account. Try a different email.');
+        return;
+      }
+      // 3. Save Jellyfin credentials, mark account as set up, and connect
+      await JellyfinConfig.save(serverUrl: url, apiKey: creds.token, userId: creds.userId);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('vibe_has_setup', true);
+      connectionNotifier.connect();
+    } on AuthException catch (e) {
+      if (mounted) _setError(e.message);
+    } on Exception catch (e) {
+      if (mounted) _setError(e.toString().replaceAll(RegExp(r'^Exception: '), ''));
+    }
+  }
+
+  Future<void> _joinFriendsLibrary() async {
+    if (!_codeValid) { _setError('Enter a valid invite code first.'); return; }
+    if (_jellyfinUserCtrl.text.trim().isEmpty) { _setError('Enter your Jellyfin username.'); return; }
+    if (_jellyfinPassCtrl.text.isEmpty) { _setError('Enter your Jellyfin password.'); return; }
+
+    setState(() { _loading = true; _error = null; });
+    try {
+      final result = await AuthService.createJellyfinAccountForInvite(
+        inviteCode: _codeCtrl.text.trim(),
+        username:   _jellyfinUserCtrl.text.trim(),
+        password:   _jellyfinPassCtrl.text,
+      );
+      final serverUrl = result['server_url'] as String;
+      final token     = result['jellyfin_token'] as String;
+      final userId    = result['jellyfin_user_id'] as String;
+      await JellyfinConfig.save(
+        serverUrl: serverUrl,
+        apiKey:    token,
+        userId:    userId,
+        vibeLib:   VibeConfig.vibeLibrary,
+        aiLib:     VibeConfig.aiLibrary,
+      );
+      connectionNotifier.connect();
+    } on Exception catch (e) {
+      if (mounted) _setError(e.toString().replaceAll(RegExp(r'^Exception: '), ''));
+    }
   }
 
   @override
@@ -307,16 +277,12 @@ class _LoginScreenState extends State<LoginScreen>
       body: Stack(
         children: [
           Positioned(
-            top: -120,
-            left: -80,
+            top: -120, left: -80,
             child: Container(
-              width: 500,
-              height: 500,
+              width: 500, height: 500,
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [Color(0x337C3AED), Colors.transparent],
-                ),
+                gradient: RadialGradient(colors: [Color(0x337C3AED), Colors.transparent]),
               ),
             ),
           ),
@@ -356,22 +322,13 @@ class _LoginScreenState extends State<LoginScreen>
           ).createShader(bounds),
           child: const Text(
             'ViBE',
-            style: TextStyle(
-              fontSize: 54,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 8,
-              color: Colors.white,
-            ),
+            style: TextStyle(fontSize: 54, fontWeight: FontWeight.w800, letterSpacing: 8, color: Colors.white),
           ),
         ),
         const SizedBox(height: 8),
         const Text(
           'Your music. Premium.',
-          style: TextStyle(
-            fontSize: 14,
-            color: _kTextDim,
-            letterSpacing: 1.5,
-          ),
+          style: TextStyle(fontSize: 14, color: _kTextDim, letterSpacing: 1.5),
         ),
       ],
     );
@@ -387,23 +344,13 @@ class _LoginScreenState extends State<LoginScreen>
       padding: const EdgeInsets.all(4),
       child: Row(
         children: [
-          if (_hasSetupBefore)
-            _ModeTab(
-              label: 'Sign In',
-              selected: _mode == _Mode.signIn,
-              onTap: () => _switchMode(_Mode.signIn),
-            ),
+          _ModeTab(label: 'Try ViBE',        selected: _mode == _Mode.tryVibe,        onTap: () => _switchMode(_Mode.tryVibe)),
+          _ModeTab(label: 'Friends Library', selected: _mode == _Mode.friendsLibrary, onTap: () => _switchMode(_Mode.friendsLibrary)),
           _ModeTab(
-            label: "Friend's Library",
-            selected: _mode == _Mode.join,
-            onTap: () => _switchMode(_Mode.join),
+            label:    _hasSetup ? 'Sign In'   : 'Own Server',
+            selected: _hasSetup ? _mode == _Mode.signIn : _mode == _Mode.ownServer,
+            onTap:    () => _switchMode(_hasSetup ? _Mode.signIn : _Mode.ownServer),
           ),
-          if (!_hasSetupBefore)
-            _ModeTab(
-              label: 'Own Server',
-              selected: _mode == _Mode.ownServer,
-              onTap: () => _switchMode(_Mode.ownServer),
-            ),
         ],
       ),
     );
@@ -429,26 +376,23 @@ class _LoginScreenState extends State<LoginScreen>
           ],
           const SizedBox(height: 24),
           _buildSubmitButton(),
-          if (_mode == _Mode.signIn) ...[
-            const SizedBox(height: 16),
-            _buildForgotPassword(),
-          ],
         ],
       ),
     );
   }
 
   Widget _buildHeader() {
-    final titles = {
-      _Mode.signIn:    ('Welcome back',    'Sign in to your ViBE account'),
-      _Mode.join:      ("Friend's Library", 'Got an invite code? Enter it below to access their shared music library.'),
-      _Mode.ownServer: ('Connect Server',  'Use your own Jellyfin server'),
+    final titles = <_Mode, (String, String)>{
+      _Mode.tryVibe:        ('Try ViBE',            'Explore AI-curated music — no account needed.'),
+      _Mode.friendsLibrary: ("Friend's Library",    'Got an invite code? Access their shared music library.'),
+      _Mode.ownServer:      ('Connect Your Server', 'Use your own Jellyfin server with your full library.'),
+      _Mode.signIn:         ('Welcome Back',        'Sign in to your ViBE account.'),
     };
     final (title, subtitle) = titles[_mode]!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title,   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: _kText)),
+        Text(title,    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: _kText)),
         const SizedBox(height: 4),
         Text(subtitle, style: const TextStyle(fontSize: 13, color: _kTextDim)),
       ],
@@ -457,26 +401,44 @@ class _LoginScreenState extends State<LoginScreen>
 
   List<Widget> _buildFields() {
     switch (_mode) {
-      case _Mode.signIn:
+      case _Mode.tryVibe:
         return [
-          _Field(controller: _emailCtrl,    label: 'Email',    keyboard: TextInputType.emailAddress),
-          const SizedBox(height: 12),
-          _Field(controller: _passwordCtrl, label: 'Password', obscure: _obscure,
-            suffix: _ObscureToggle(obscure: _obscure, onTap: () => setState(() => _obscure = !_obscure)),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _kAccent.withAlpha(0x18),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _kAccent.withAlpha(0x33)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Row(children: [
+                  Icon(Icons.auto_awesome_rounded, color: _kAccentLight, size: 16),
+                  SizedBox(width: 8),
+                  Text('AI-Generated Music', style: TextStyle(color: _kAccentLight, fontSize: 13, fontWeight: FontWeight.w600)),
+                ]),
+                SizedBox(height: 8),
+                Text(
+                  'Listen to a curated library of original AI music — free to explore anytime.',
+                  style: TextStyle(color: _kTextDim, fontSize: 13, height: 1.5),
+                ),
+              ],
+            ),
           ),
         ];
 
-      case _Mode.join:
+      case _Mode.friendsLibrary:
         return [
           _CodeField(
-            controller:   _codeCtrl,
-            checking:     _codeChecking,
-            valid:        _codeValid,
-            onChanged:    _checkCode,
+            controller: _codeCtrl,
+            checking:   _codeChecking,
+            valid:      _codeValid,
+            onChanged:  _checkCode,
           ),
           if (_codeValid) ...[
             const SizedBox(height: 20),
-            _SectionLabel(icon: Icons.person_outline, label: 'Your Jellyfin account'),
+            _SectionLabel(icon: Icons.person_outline, label: 'Your account on their server'),
             const SizedBox(height: 12),
             _Field(
               controller: _jellyfinUserCtrl,
@@ -493,25 +455,46 @@ class _LoginScreenState extends State<LoginScreen>
                 onTap: () => setState(() => _jellyfinObscure = !_jellyfinObscure),
               ),
             ),
-            const SizedBox(height: 20),
-            _SectionLabel(icon: Icons.shield_outlined, label: 'Your ViBE account'),
-            const SizedBox(height: 12),
-            _Field(controller: _nameCtrl,     label: 'Your name'),
-            const SizedBox(height: 12),
-            _Field(controller: _emailCtrl,    label: 'Email',    keyboard: TextInputType.emailAddress),
-            const SizedBox(height: 12),
-            _Field(
-              controller: _passwordCtrl,
-              label: 'ViBE Password',
-              obscure: _obscure,
-              suffix: _ObscureToggle(obscure: _obscure, onTap: () => setState(() => _obscure = !_obscure)),
-            ),
           ],
+        ];
+
+      case _Mode.signIn:
+        return [
+          _SectionLabel(icon: Icons.account_circle_outlined, label: 'Your ViBE account'),
+          const SizedBox(height: 12),
+          _Field(
+            controller: _emailCtrl,
+            label: 'Email',
+            keyboard: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: 12),
+          _Field(
+            controller: _vibePassCtrl,
+            label: 'Password',
+            obscure: _vibeObscure,
+            suffix: _ObscureToggle(
+              obscure: _vibeObscure,
+              onTap: () => setState(() => _vibeObscure = !_vibeObscure),
+            ),
+          ),
+          const SizedBox(height: 20),
+          _SectionLabel(icon: Icons.dns_outlined, label: 'Your Jellyfin server'),
+          const SizedBox(height: 12),
+          _Field(controller: _jellyfinUserCtrl, label: 'Jellyfin Username'),
+          const SizedBox(height: 12),
+          _Field(
+            controller: _jellyfinPassCtrl,
+            label: 'Jellyfin Password',
+            obscure: _jellyfinObscure,
+            suffix: _ObscureToggle(
+              obscure: _jellyfinObscure,
+              onTap: () => setState(() => _jellyfinObscure = !_jellyfinObscure),
+            ),
+          ),
         ];
 
       case _Mode.ownServer:
         return [
-          // Jellyfin server section
           _SectionLabel(icon: Icons.dns_outlined, label: 'Your Jellyfin server'),
           const SizedBox(height: 12),
           _Field(
@@ -521,10 +504,7 @@ class _LoginScreenState extends State<LoginScreen>
             keyboard: TextInputType.url,
           ),
           const SizedBox(height: 12),
-          _Field(
-            controller: _jellyfinUserCtrl,
-            label: 'Jellyfin Username',
-          ),
+          _Field(controller: _jellyfinUserCtrl, label: 'Jellyfin Username'),
           const SizedBox(height: 12),
           _Field(
             controller: _jellyfinPassCtrl,
@@ -536,20 +516,23 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ),
           const SizedBox(height: 20),
-          // ViBE account section
-          _SectionLabel(icon: Icons.person_outline, label: 'Your ViBE account'),
+          _SectionLabel(icon: Icons.person_outline, label: 'Create your ViBE account'),
           const SizedBox(height: 12),
-          _Field(controller: _nameCtrl,     label: 'Your name'),
-          const SizedBox(height: 12),
-          _Field(controller: _emailCtrl,    label: 'Email',    keyboard: TextInputType.emailAddress),
+          _Field(controller: _nameCtrl, label: 'Name'),
           const SizedBox(height: 12),
           _Field(
-            controller: _passwordCtrl,
-            label: 'ViBE Password',
-            obscure: _obscure,
+            controller: _emailCtrl,
+            label: 'Email',
+            keyboard: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: 12),
+          _Field(
+            controller: _vibePassCtrl,
+            label: 'Password',
+            obscure: _vibeObscure,
             suffix: _ObscureToggle(
-              obscure: _obscure,
-              onTap: () => setState(() => _obscure = !_obscure),
+              obscure: _vibeObscure,
+              onTap: () => setState(() => _vibeObscure = !_vibeObscure),
             ),
           ),
         ];
@@ -557,13 +540,12 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _buildSubmitButton() {
-    String label;
-    if (_mode == _Mode.signIn) {
-      label = 'Sign In';
-    } else if (_mode == _Mode.ownServer) {
-      label = _loading ? 'Connecting...' : 'Connect & Create Account';
-    } else {
-      label = 'Create Account';
+    final String label;
+    switch (_mode) {
+      case _Mode.tryVibe:        label = 'Try ViBE';
+      case _Mode.friendsLibrary: label = _loading ? 'Joining...'           : 'Join Library';
+      case _Mode.ownServer:      label = _loading ? 'Creating Account...'  : 'Create Account';
+      case _Mode.signIn:         label = _loading ? 'Signing In...'        : 'Sign In';
     }
 
     return GestureDetector(
@@ -572,118 +554,15 @@ class _LoginScreenState extends State<LoginScreen>
         duration: const Duration(milliseconds: 160),
         height: 52,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF9B59EE), Color(0xFF6D28D9)],
-          ),
+          gradient: const LinearGradient(colors: [Color(0xFF9B59EE), Color(0xFF6D28D9)]),
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: _kAccent.withAlpha(0x55),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: _kAccent.withAlpha(0x55), blurRadius: 16, offset: const Offset(0, 6))],
         ),
         alignment: Alignment.center,
         child: _loading
-            ? const SizedBox(
-                width: 22, height: 22,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              )
-            : Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                ),
-              ),
+            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            : Text(label, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.4)),
       ),
-    );
-  }
-
-  Widget _buildForgotPassword() {
-    return Center(
-      child: GestureDetector(
-        onTap: _showForgotPassword,
-        child: const Text(
-          'Forgot password?',
-          style: TextStyle(color: _kAccentLight, fontSize: 13),
-        ),
-      ),
-    );
-  }
-
-  void _showForgotPassword() {
-    final emailCtrl = TextEditingController(text: _emailCtrl.text.trim());
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: _kSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        var sending = false;
-        var sent    = false;
-        return StatefulBuilder(builder: (ctx, setSt) {
-          return Padding(
-            padding: EdgeInsets.fromLTRB(24, 24, 24,
-              24 + MediaQuery.of(ctx).viewInsets.bottom),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('Reset Password',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _kText)),
-                const SizedBox(height: 8),
-                const Text('We\'ll send a reset link to your email.',
-                  style: TextStyle(color: _kTextDim, fontSize: 13)),
-                const SizedBox(height: 20),
-                if (!sent) ...[
-                  _Field(controller: emailCtrl, label: 'Email',
-                    keyboard: TextInputType.emailAddress),
-                  const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: sending ? null : () async {
-                      setSt(() => sending = true);
-                      await AuthService.resetPassword(emailCtrl.text.trim());
-                      setSt(() { sending = false; sent = true; });
-                    },
-                    child: Container(
-                      height: 48,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF9B59EE), Color(0xFF6D28D9)],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      alignment: Alignment.center,
-                      child: sending
-                          ? const SizedBox(width: 18, height: 18,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Text('Send Reset Link',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                    ),
-                  ),
-                ] else ...[
-                  const Icon(Icons.check_circle_outline, color: Color(0xFF4CAF50), size: 48),
-                  const SizedBox(height: 12),
-                  const Text('Check your inbox for a reset link.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: _kTextDim)),
-                  const SizedBox(height: 16),
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Done', style: TextStyle(color: _kAccentLight)),
-                  ),
-                ],
-              ],
-            ),
-          );
-        });
-      },
     );
   }
 }
@@ -701,31 +580,16 @@ class _SectionLabel extends StatelessWidget {
       children: [
         Icon(icon, color: _kAccentLight, size: 14),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            color: _kAccentLight,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.3,
-          ),
-        ),
+        Text(label, style: const TextStyle(color: _kAccentLight, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3)),
         const SizedBox(width: 8),
-        Expanded(
-          child: Container(height: 1, color: const Color(0x22FFFFFF)),
-        ),
+        Expanded(child: Container(height: 1, color: const Color(0x22FFFFFF))),
       ],
     );
   }
 }
 
 class _ModeTab extends StatelessWidget {
-  const _ModeTab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
+  const _ModeTab({required this.label, required this.selected, required this.onTap});
   final String label;
   final bool   selected;
   final VoidCallback onTap;
@@ -769,21 +633,21 @@ class _Field extends StatelessWidget {
   });
 
   final TextEditingController controller;
-  final String label;
-  final String? hint;
+  final String    label;
+  final String?   hint;
   final TextInputType keyboard;
-  final bool   obscure;
-  final Widget? suffix;
+  final bool      obscure;
+  final Widget?   suffix;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
-      controller:          controller,
-      obscureText:         obscure,
-      keyboardType:        keyboard,
-      keyboardAppearance:  Brightness.dark,
-      autocorrect:         false,
-      enableSuggestions:   !obscure,
+      controller:         controller,
+      obscureText:        obscure,
+      keyboardType:       keyboard,
+      keyboardAppearance: Brightness.dark,
+      autocorrect:        false,
+      enableSuggestions:  !obscure,
       style: const TextStyle(color: _kText, fontSize: 15),
       decoration: InputDecoration(
         labelText:     label,
@@ -831,9 +695,9 @@ class _CodeField extends StatelessWidget {
       inputFormatters:    [_CodeFormatter()],
       onChanged:          onChanged,
       style: TextStyle(
-        color:       valid ? const Color(0xFF4CAF50) : _kText,
-        fontSize:    18,
-        fontWeight:  FontWeight.w700,
+        color:         valid ? const Color(0xFF4CAF50) : _kText,
+        fontSize:      18,
+        fontWeight:    FontWeight.w700,
         letterSpacing: 4,
       ),
       decoration: InputDecoration(
@@ -847,23 +711,17 @@ class _CodeField extends StatelessWidget {
             ? const Padding(
                 padding: EdgeInsets.all(14),
                 child: SizedBox(width: 18, height: 18,
-                  child: CircularProgressIndicator(color: _kAccentLight, strokeWidth: 2)),
-              )
+                  child: CircularProgressIndicator(color: _kAccentLight, strokeWidth: 2)))
             : valid
                 ? const Icon(Icons.check_circle, color: Color(0xFF4CAF50))
                 : null,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: valid ? const Color(0xFF4CAF50) : _kBorder,
-          ),
+          borderSide: BorderSide(color: valid ? const Color(0xFF4CAF50) : _kBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: valid ? const Color(0xFF4CAF50) : _kAccent,
-            width: 1.5,
-          ),
+          borderSide: BorderSide(color: valid ? const Color(0xFF4CAF50) : _kAccent, width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
@@ -873,16 +731,10 @@ class _CodeField extends StatelessWidget {
 
 class _CodeFormatter extends TextInputFormatter {
   @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue old, TextEditingValue value,
-  ) {
+  TextEditingValue formatEditUpdate(TextEditingValue old, TextEditingValue value) {
     var text = value.text.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
     if (text.length > 6) text = text.substring(0, 6);
-
-    return TextEditingValue(
-      text:      text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
+    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
   }
 }
 
@@ -894,11 +746,7 @@ class _ObscureToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: Icon(
-        obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-        color: _kTextDim,
-        size: 20,
-      ),
+      icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: _kTextDim, size: 20),
       onPressed: onTap,
     );
   }
@@ -921,8 +769,7 @@ class _ErrorBanner extends StatelessWidget {
         children: [
           const Icon(Icons.error_outline, color: _kError, size: 16),
           const SizedBox(width: 8),
-          Expanded(child: Text(message,
-            style: const TextStyle(color: _kError, fontSize: 13))),
+          Expanded(child: Text(message, style: const TextStyle(color: _kError, fontSize: 13))),
         ],
       ),
     );

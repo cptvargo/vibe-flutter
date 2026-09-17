@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,32 +12,34 @@ import 'audio/audio_handler.dart';
 import 'config/jellyfin_config.dart';
 import 'config/vibe_config.dart';
 import 'navigation/router.dart';
+import 'providers/connection_notifier.dart';
 import 'theme/palette_service.dart';
 import 'services/download_service.dart';
 import 'services/offline_playlist_service.dart';
 import 'services/recently_played_service.dart';
 import 'services/last_played_service.dart';
 import 'services/on_deck_service.dart';
-import 'services/vibe_out_service.dart';
 import 'providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Portrait only — music apps don't need landscape
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
+    // Portrait only — music apps don't need landscape (mobile only)
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-  // Draw edge-to-edge (content behind status bar / nav bar)
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // Draw edge-to-edge (content behind status bar / nav bar)
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  // White status bar icons — matches our dark UI on both platforms
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor:             Colors.transparent,
-    statusBarIconBrightness:    Brightness.light,  // Android: white icons
-    statusBarBrightness:        Brightness.dark,   // iOS: white icons
-    systemNavigationBarColor:   Colors.transparent,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
+    // White status bar icons — matches our dark UI on both platforms
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor:             Colors.transparent,
+      statusBarIconBrightness:    Brightness.light,
+      statusBarBrightness:        Brightness.dark,
+      systemNavigationBarColor:   Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ));
+  }
 
   await Supabase.initialize(
     url:            VibeConfig.supabaseUrl,
@@ -45,14 +48,15 @@ Future<void> main() async {
 
   await Hive.initFlutter();
   // Load Jellyfin credentials before any screen renders.
-  // Reads from Hive (fast), falls back to Supabase metadata on reinstall.
   await JellyfinConfig.load();
+  await connectionNotifier.load();
   await DownloadService.init();
   await OfflinePlaylistService.init();
   await PaletteService.init();
   await RecentlyPlayedService.init();
   await OnDeckService.init();
-  VibeOutService.init(); // fire-and-forget — fetches from network, not blocking
+  // VibeOutService is initialized in MainShell.initState so it runs after
+  // credentials are established (demo or real), not at cold start with defaults.
 
   final handler = await AudioService.init(
     builder: () => VibeAudioHandler(),

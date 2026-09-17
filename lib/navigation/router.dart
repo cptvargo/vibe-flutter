@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../providers/auth_provider.dart';
+import '../providers/connection_notifier.dart';
 import '../screens/album_screen.dart';
 import '../screens/all_artists_screen.dart';
 import '../screens/artist_screen.dart';
@@ -14,16 +14,14 @@ import '../widgets/main_shell.dart';
 
 final GoRouter router = GoRouter(
   initialLocation: '/',
-  refreshListenable: authNotifier,
+  refreshListenable: connectionNotifier,
   redirect: (context, state) {
-    final loggedIn  = authNotifier.isLoggedIn;
+    final connected = connectionNotifier.isConnected;
     final atLogin   = state.matchedLocation == '/login';
     final atReset   = state.matchedLocation == '/reset-password';
 
-    if (authNotifier.isPasswordRecovery) return '/reset-password';
-    if (!loggedIn && !atLogin) return '/login';
-    if (loggedIn  &&  atLogin) return '/';
-    if (!authNotifier.isPasswordRecovery && atReset) return '/';
+    if (!connected && !atLogin && !atReset) return '/login';
+    if (connected  &&  atLogin) return '/';
     return null;
   },
   routes: [
@@ -37,8 +35,6 @@ final GoRouter router = GoRouter(
       builder: (context, state) => const ResetPasswordScreen(),
     ),
 
-    // Root shell — album/artist/mix are nested so router.go('/album/:id')
-    // resolves to [MainShell, TargetScreen], giving a proper back stack.
     GoRoute(
       path: '/',
       builder: (context, state) => const MainShell(),
@@ -76,7 +72,6 @@ final GoRouter router = GoRouter(
       ],
     ),
 
-    // Deep link: vibemusic://song/{id} — opened from a ViBE Out share card.
     GoRoute(
       path: '/song/:id',
       builder: (context, state) => SongLinkScreen(
@@ -86,8 +81,6 @@ final GoRouter router = GoRouter(
       ),
     ),
 
-    // Player stays at root level — it's a full-screen modal overlay, not a
-    // sub-page of MainShell, and must be reachable from any route.
     GoRoute(
       path: '/player',
       pageBuilder: (context, state) => CustomTransitionPage(

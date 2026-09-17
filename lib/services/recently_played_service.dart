@@ -15,6 +15,44 @@ class RecentlyPlayedService {
   static List<VibeTrack>         get tracks   => _notifier.tracks;
   static List<VibeTrack>         get aiTracks => _notifier.aiTracks;
 
+  static String? _preDemoRegular;
+  static String? _preDemoAI;
+
+  static Future<void> snapshotPreDemo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _preDemoRegular = prefs.getString(_key);
+      _preDemoAI      = prefs.getString(_aiKey);
+    } catch (_) {}
+  }
+
+  static void clearForDemo() {
+    _notifier._set([], isAI: false);
+    _notifier._set([], isAI: true);
+  }
+
+  static Future<void> restorePostDemo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_preDemoRegular != null) {
+        await prefs.setString(_key, _preDemoRegular!);
+      } else {
+        await prefs.remove(_key);
+      }
+      if (_preDemoAI != null) {
+        await prefs.setString(_aiKey, _preDemoAI!);
+      } else {
+        await prefs.remove(_aiKey);
+      }
+      _preDemoRegular = null;
+      _preDemoAI      = null;
+      await init();
+    } catch (_) {
+      _preDemoRegular = null;
+      _preDemoAI      = null;
+    }
+  }
+
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
 

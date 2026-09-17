@@ -155,6 +155,43 @@ class OnDeckService {
   static AlbumSession?      getMostRecent()             => getAllSessions().firstOrNull;
   static List<AlbumSession> getAllSessions()             => _sorted();
 
+  // ── Demo mode helpers ────────────────────────────────────────────────────────
+
+  static String? _preDemo; // raw JSON snapshot taken just before demo starts
+
+  // Call before entering demo: snapshots current SharedPreferences state so
+  // we can restore it (without demo sessions) when the user exits demo.
+  static Future<void> snapshotPreDemo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _preDemo = prefs.getString(_key); // null = no sessions yet
+    } catch (_) {}
+  }
+
+  // Clear in-memory sessions for demo without touching SharedPreferences.
+  static void clearForDemo() {
+    _sessions.clear();
+    _ctrl.add(null);
+  }
+
+  // Restore the pre-demo snapshot, evicting any sessions added during demo.
+  static Future<void> restorePostDemo() async {
+    _sessions.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_preDemo != null) {
+        await prefs.setString(_key, _preDemo!);
+      } else {
+        await prefs.remove(_key);
+      }
+      _preDemo = null;
+      await init();
+    } catch (_) {
+      _preDemo = null;
+    }
+    _ctrl.add(null);
+  }
+
   static List<AlbumSession> _sorted() => _sessions.values.toList()
     ..sort((a, b) => b.savedAt.compareTo(a.savedAt));
 

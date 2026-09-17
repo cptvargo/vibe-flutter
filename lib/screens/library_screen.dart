@@ -9,7 +9,6 @@ import '../theme/vibe_theme.dart';
 import 'playlists_tab.dart';
 
 // Layout constants — kept consistent between render and offset math
-const _kColumns     = 3;
 const _kHPad        = 16.0;
 const _kGap         = 10.0;
 const _kMainSpacing = 14.0;
@@ -105,6 +104,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       return Center(child: CircularProgressIndicator(color: theme.accentBright));
     }
 
+    // Responsive columns — more on wider screens
+    final kColumns = screenW >= 900 ? 5 : screenW >= 600 ? 4 : 3;
+
     // Group by letter
     final groups  = <String, List<Map<String, dynamic>>>{};
     for (final album in _albums) {
@@ -116,8 +118,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
     // Cell geometry — must match SliverGrid layout exactly
     final availW  = screenW - _kHPad * 2 - _kScrubberW - _kScrubberPad
-                    - _kGap * (_kColumns - 1);
-    final cardW   = availW / _kColumns;
+                    - _kGap * (kColumns - 1);
+    final cardW   = availW / kColumns;
     final cellH   = cardW + _kExtraH;
     final rowH    = cellH + _kMainSpacing;
 
@@ -126,7 +128,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     var cumulative = 0.0;
     for (final letter in letters) {
       offsets[letter] = cumulative;
-      final numRows   = (groups[letter]!.length / _kColumns).ceil();
+      final numRows   = (groups[letter]!.length / kColumns).ceil();
       cumulative += _kHeaderH + numRows * rowH;
     }
 
@@ -194,7 +196,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     childCount: groups[letter]!.length,
                   ),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount:  _kColumns,
+                    crossAxisCount:  kColumns,
                     crossAxisSpacing: _kGap,
                     mainAxisSpacing:  _kMainSpacing,
                     childAspectRatio: cardW / cellH,

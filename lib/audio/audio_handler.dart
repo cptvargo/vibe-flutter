@@ -668,6 +668,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override Future<void> seek(Duration position) => _primary.seek(position);
 
+  Future<void> setVolume(double volume) => _primary.setVolume(volume.clamp(0.0, 1.0));
+
   @override
   Future<void> skipToNext() async {
     if (_crossfading) {

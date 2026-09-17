@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import '../providers.dart';
+import '../providers/connection_notifier.dart';
 import '../services/auth_service.dart';
 import '../theme/vibe_theme.dart';
 
@@ -294,6 +295,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onPressed: () {
                 Navigator.pop(ctx);
                 AuthService.signOut();
+                connectionNotifier.disconnect();
               },
               child: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
