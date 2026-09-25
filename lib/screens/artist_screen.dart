@@ -322,18 +322,19 @@ class _ArtistHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 300,
-      width: double.infinity,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          CachedNetworkImage(
-            imageUrl: JellyfinApi.imageUrl(artistId, size: 800),
-            fit: BoxFit.cover,
-            alignment: Alignment.topCenter,
-            placeholder: (_, _) => const ColoredBox(color: Color(0xFF0D0D1A)),
-            errorWidget: (_, _, _) => ColoredBox(
+    return Stack(
+      children: [
+        CachedNetworkImage(
+          imageUrl: JellyfinApi.imageUrl(artistId, size: 800),
+          width: double.infinity,
+          fit: BoxFit.fitWidth,
+          placeholder: (_, _) => const SizedBox(
+            height: 300,
+            child: ColoredBox(color: Color(0xFF0D0D1A)),
+          ),
+          errorWidget: (_, _, _) => SizedBox(
+            height: 300,
+            child: ColoredBox(
               color: const Color(0xFF0D0D1A),
               child: Center(
                 child: Text(
@@ -347,35 +348,41 @@ class _ArtistHero extends StatelessWidget {
               ),
             ),
           ),
-          // Status bar darkening gradient
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.black.withAlpha(0x77), Colors.transparent],
-                stops: const [0.0, 0.35],
-              ),
-            ),
-          ),
-          // Bottom fade into page background
-          const Positioned(
-            bottom: 0, left: 0, right: 0,
-            child: SizedBox(
-              height: 110,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Color(0xFF06060F)],
-                  ),
+        ),
+        // Status bar darkening gradient
+        Positioned(
+          top: 0, left: 0, right: 0,
+          child: SizedBox(
+            height: 80,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black.withAlpha(0x77), Colors.transparent],
+                  stops: const [0.0, 0.35],
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+        // Bottom fade into page background
+        const Positioned(
+          bottom: 0, left: 0, right: 0,
+          child: SizedBox(
+            height: 110,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Color(0xFF06060F)],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
