@@ -331,6 +331,7 @@ class _ArtistHero extends StatelessWidget {
           CachedNetworkImage(
             imageUrl: JellyfinApi.imageUrl(artistId, size: 800),
             fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
             placeholder: (_, _) => const ColoredBox(color: Color(0xFF0D0D1A)),
             errorWidget: (_, _, _) => ColoredBox(
               color: const Color(0xFF0D0D1A),
