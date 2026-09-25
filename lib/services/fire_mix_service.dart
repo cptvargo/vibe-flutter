@@ -5,11 +5,21 @@ import '../api/jellyfin_models.dart';
 class FireMixService {
   static const _key = 'fire_mix_tracks_v1';
 
+  static String _normalizeGenre(String g) {
+    if (g == 'Contemporary Christian' || g == 'CCM') return 'Christian';
+    return g;
+  }
+
   static Future<List<VibeTrack>> load() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_key) ?? [];
     return raw.map((s) {
       final m = jsonDecode(s) as Map<String, dynamic>;
+      final genres = (m['genres'] as List?)
+          ?.cast<String>()
+          .map(_normalizeGenre)
+          .toSet()
+          .toList() ?? const <String>[];
       return VibeTrack(
         id:         m['id'] as String,
         url:        m['url'] as String,
@@ -21,7 +31,7 @@ class FireMixService {
         colorUrl:   m['colorUrl'] as String,
         blurHash:   m['blurHash'] as String?,
         duration:   Duration(microseconds: m['durationMicros'] as int? ?? 0),
-        genres:     (m['genres'] as List?)?.cast<String>() ?? const [],
+        genres:     genres,
         raw:        {},
       );
     }).toList();

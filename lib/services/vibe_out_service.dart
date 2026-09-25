@@ -5,10 +5,9 @@ import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 
 class VibeOutService {
-  static const _tracksKey    = 'vibe_out_tracks_v1';
-  static const _refreshedKey = 'vibe_out_refreshed_v1';
+  static const _tracksKey    = 'vibe_out_tracks_v2';
+  static const _refreshedKey = 'vibe_out_refreshed_v2';
   static const _trackCount   = 28;
-  static const _refreshDays  = 7;
 
   static List<VibeTrack> _tracks = [];
   static final _ctrl = StreamController<void>.broadcast();
@@ -36,9 +35,12 @@ class VibeOutService {
   }
 
   static bool _isStale(String stamp) {
-    final date = DateTime.tryParse(stamp);
-    if (date == null) return true;
-    return DateTime.now().difference(date).inDays >= _refreshDays;
+    final saved = DateTime.tryParse(stamp);
+    if (saved == null) return true;
+    final now   = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day   = DateTime(saved.year, saved.month, saved.day);
+    return !day.isAtSameMomentAs(today);
   }
 
   static Future<void> refresh() => _fetch(null);

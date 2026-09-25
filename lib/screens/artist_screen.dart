@@ -6,7 +6,6 @@ import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
 import '../theme/palette_service.dart';
-import '../widgets/artist_avatar.dart';
 import '../widgets/mini_player.dart';
 
 class ArtistScreen extends ConsumerStatefulWidget {
@@ -99,6 +98,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
           ),
 
           SafeArea(
+            top: false,
             bottom: false,
             child: CustomScrollView(
               slivers: [
@@ -106,30 +106,13 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                 SliverToBoxAdapter(
                   child: Column(
                     children: [
-                      const SizedBox(height: 60),
-
-                      // Large centered circle avatar with palette glow
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: palette.vibrant.withAlpha(0x55),
-                              blurRadius: 48,
-                              spreadRadius: 8,
-                            ),
-                          ],
-                        ),
-                        child: ArtistAvatar(
-                          id: widget.artistId,
-                          name: widget.artistName,
-                          size: 168,
-                          theme: theme,
-                          circle: true,
-                        ),
+                      // Hero image — full bleed from screen top
+                      _ArtistHero(
+                        artistId:   widget.artistId,
+                        artistName: widget.artistName,
                       ),
 
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
 
                       // Artist name
                       Padding(
@@ -279,8 +262,10 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                           final year    = album['ProductionYear'] as int?;
                           return _AlbumRow(
                             artUrl:     artUrl,
+                            albumId:    albumId,
                             name:       name,
                             year:       year,
+                            artistName: widget.artistName,
                             palette:    palette,
                             isLast:     i == _albums.length - 1,
                             onTap: () {
@@ -328,9 +313,81 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   }
 }
 
+// ── Hero image widget ─────────────────────────────────────────────────────────
+
+class _ArtistHero extends StatelessWidget {
+  final String artistId;
+  final String artistName;
+
+  const _ArtistHero({required this.artistId, required this.artistName});
+
+  @override
+  Widget build(BuildContext context) {
+    final topPad = MediaQuery.of(context).padding.top;
+    return SizedBox(
+      height: 300 + topPad,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CachedNetworkImage(
+            imageUrl: JellyfinApi.imageUrl(artistId, size: 800),
+            fit: BoxFit.cover,
+            placeholder: (_, _) => const ColoredBox(color: Color(0xFF0D0D1A)),
+            errorWidget: (_, _, _) => ColoredBox(
+              color: const Color(0xFF0D0D1A),
+              child: Center(
+                child: Text(
+                  artistName.isNotEmpty ? artistName[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    color: Color(0x44FFFFFF),
+                    fontSize: 80,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Status bar darkening gradient
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.black.withAlpha(0x77), Colors.transparent],
+                stops: const [0.0, 0.35],
+              ),
+            ),
+          ),
+          // Bottom fade into page background
+          const Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: SizedBox(
+              height: 110,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0xFF06060F)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Album row ─────────────────────────────────────────────────────────────────
+
 class _AlbumRow extends StatelessWidget {
   final String artUrl;
+  final String albumId;
   final String name;
+  final String artistName;
   final int? year;
   final VibePalette palette;
   final bool isLast;
@@ -338,12 +395,33 @@ class _AlbumRow extends StatelessWidget {
 
   const _AlbumRow({
     required this.artUrl,
+    required this.albumId,
     required this.name,
+    required this.artistName,
     required this.year,
     required this.palette,
     required this.isLast,
     required this.onTap,
   });
+
+  void _showMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ContextSheet(
+        artUrl: artUrl,
+        title:  name,
+        subtitle: year != null ? '$year' : artistName,
+        items: [
+          _SheetItem(
+            icon:  Icons.play_arrow_rounded,
+            label: 'Play Album',
+            onTap: () { Navigator.pop(context); onTap(); },
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -355,9 +433,7 @@ class _AlbumRow extends StatelessWidget {
             ? null
             : BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(
-                    color: Colors.white.withAlpha(0x0D),
-                  ),
+                  bottom: BorderSide(color: Colors.white.withAlpha(0x0D)),
                 ),
               ),
         child: Row(
@@ -366,17 +442,10 @@ class _AlbumRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(9),
               child: CachedNetworkImage(
                 imageUrl: artUrl,
-                width: 58,
-                height: 58,
+                width: 58, height: 58,
                 fit: BoxFit.cover,
-                placeholder: (_, _) => Container(
-                  width: 58, height: 58,
-                  color: Colors.white.withAlpha(0x0D),
-                ),
-                errorWidget: (_, _, _) => Container(
-                  width: 58, height: 58,
-                  color: Colors.white.withAlpha(0x0A),
-                ),
+                placeholder:  (_, _) => Container(width: 58, height: 58, color: Colors.white.withAlpha(0x0D)),
+                errorWidget:  (_, _, _) => Container(width: 58, height: 58, color: Colors.white.withAlpha(0x0A)),
               ),
             ),
             const SizedBox(width: 14),
@@ -410,14 +479,131 @@ class _AlbumRow extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white.withAlpha(0x2E),
-              size: 20,
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => _showMenu(context),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 12, 4, 12),
+                child: Icon(
+                  Icons.more_vert_rounded,
+                  color: Colors.white.withAlpha(0x44),
+                  size: 20,
+                ),
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Shared bottom-sheet context menu ─────────────────────────────────────────
+
+class _SheetItem {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _SheetItem({required this.icon, required this.label, required this.onTap});
+}
+
+class _ContextSheet extends StatelessWidget {
+  final String artUrl;
+  final String title;
+  final String subtitle;
+  final List<_SheetItem> items;
+
+  const _ContextSheet({
+    required this.artUrl,
+    required this.title,
+    required this.subtitle,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C2E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        top: 12,
+        bottom: MediaQuery.of(context).padding.bottom + 12,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            width: 36, height: 4,
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(0x30),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: artUrl,
+                    width: 48, height: 48,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, _, _) =>
+                        Container(width: 48, height: 48, color: const Color(0xFF2A2A40)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(subtitle,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(0x88), fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(color: Colors.white.withAlpha(0x15), height: 1),
+          const SizedBox(height: 4),
+          for (final item in items)
+            InkWell(
+              onTap: item.onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                child: Row(
+                  children: [
+                    Icon(item.icon, color: Colors.white.withAlpha(0xBB), size: 22),
+                    const SizedBox(width: 16),
+                    Text(item.label,
+                      style: const TextStyle(
+                        color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 4),
+        ],
       ),
     );
   }

@@ -715,6 +715,7 @@ class _ContentState extends ConsumerState<_Content> {
                             duration:   item.duration ?? Duration(
                               microseconds: extras['durationMicros'] as int? ?? 0,
                             ),
+                            genres:     (extras['genres'] as List?)?.cast<String>() ?? const [],
                             raw: {},
                           );
                           ref.read(fireMixProvider.notifier).toggle(track);

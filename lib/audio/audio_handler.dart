@@ -48,6 +48,7 @@ MediaItem _toMediaItem(VibeTrack t, {String playbackContext = 'album'}) {
       'trackNumber':     t.trackNumber,
       'isAI':            t.isAI,
       'playbackContext': playbackContext,
+      'genres':          t.genres,
     },
   );
 }

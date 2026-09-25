@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../providers.dart';
 import '../theme/vibe_theme.dart';
+import '../widgets/artist_avatar.dart';
 import 'playlists_tab.dart';
 
 // Layout constants — kept consistent between render and offset math
@@ -25,10 +26,12 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  int    _tab       = 0; // 0 = Albums, 1 = Playlists
-  List<Map<String, dynamic>> _albums = [];
+  int    _tab       = 0; // 0 = Albums, 1 = Artists, 2 = Playlists
+  List<Map<String, dynamic>> _albums  = [];
+  List<Map<String, dynamic>> _artists = [];
   bool _loading = true;
-  final _scrollCtrl = ScrollController();
+  final _scrollCtrl  = ScrollController();
+  final _artistCtrl  = ScrollController();
   String? _activeLetter;
 
   @override
@@ -40,14 +43,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   void dispose() {
     _scrollCtrl.dispose();
+    _artistCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     try {
-      final res = await JellyfinApi.getAlbums(limit: 1000);
-      final items = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
-      if (mounted) setState(() { _albums = items; _loading = false; });
+      final results = await Future.wait([
+        JellyfinApi.getAlbums(limit: 1000),
+        JellyfinApi.getArtists(limit: 1000),
+      ]);
+      final albums  = ((results[0]['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
+      final artists = ((results[1]['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
+      if (mounted) setState(() { _albums = albums; _artists = artists; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -83,17 +91,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           child: Row(
             children: [
               _TabPill(label: 'Albums',    active: _tab == 0,
-                  theme: theme, onTap: () => setState(() => _tab = 0)),
+                  theme: theme, onTap: () => setState(() { _tab = 0; _activeLetter = null; })),
               const SizedBox(width: 8),
-              _TabPill(label: 'Playlists', active: _tab == 1,
-                  theme: theme, onTap: () => setState(() => _tab = 1)),
+              _TabPill(label: 'Artists',   active: _tab == 1,
+                  theme: theme, onTap: () => setState(() { _tab = 1; _activeLetter = null; })),
+              const SizedBox(width: 8),
+              _TabPill(label: 'Playlists', active: _tab == 2,
+                  theme: theme, onTap: () => setState(() { _tab = 2; _activeLetter = null; })),
             ],
           ),
         ),
         Expanded(
-          child: _tab == 1
+          child: _tab == 2
               ? PlaylistsTab(theme: theme)
-              : _buildAlbumGrid(theme, screenW),
+              : _tab == 1
+                  ? _buildArtistGrid(theme, screenW)
+                  : _buildAlbumGrid(theme, screenW),
         ),
       ],
     );
@@ -253,6 +266,192 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         fontSize: 40,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildArtistGrid(VibeTheme theme, double screenW) {
+    if (_loading) {
+      return Center(child: CircularProgressIndicator(color: theme.accentBright));
+    }
+
+    final kColumns = screenW >= 900 ? 5 : screenW >= 600 ? 4 : 3;
+
+    // Group artists by letter
+    final groups  = <String, List<Map<String, dynamic>>>{};
+    for (final a in _artists) {
+      final name   = ((a['SortName'] as String?)?.trim()
+              ?? (a['Name'] as String?)?.trim()
+              ?? '').toUpperCase();
+      final ch     = name.isEmpty ? '#' : name[0];
+      final letter = RegExp(r'[A-Z]').hasMatch(ch) ? ch : '#';
+      (groups[letter] ??= []).add(a);
+    }
+    final letters = [...groups.keys]
+      ..sort((a, b) => a == '#' ? 1 : b == '#' ? -1 : a.compareTo(b));
+
+    const avatarSize = 72.0;
+    const nameH      = 34.0;
+    const cellH      = avatarSize + nameH + 8;
+    const rowH       = cellH + _kMainSpacing;
+
+    final availW = screenW - _kHPad * 2 - _kScrubberW - _kScrubberPad
+                   - _kGap * (kColumns - 1);
+    final colW   = availW / kColumns;
+
+    // Pre-compute scroll offsets per letter
+    final offsets = <String, double>{};
+    var cum = 0.0;
+    for (final letter in letters) {
+      offsets[letter] = cum;
+      final numRows   = (groups[letter]!.length / kColumns).ceil();
+      cum += _kHeaderH + numRows * rowH;
+    }
+
+    return Stack(
+      children: [
+        CustomScrollView(
+          controller: _artistCtrl,
+          slivers: [
+            for (final letter in letters) ...[
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: _kHeaderH,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                        _kHPad, 10, _kHPad + _kScrubberW + _kScrubberPad, 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          letter,
+                          style: TextStyle(
+                            color: theme.accentBright,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2.5,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Container(
+                            height: 0.5,
+                            color: theme.accentBright.withAlpha(0x2A),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                    _kHPad, 0,
+                    _kHPad + _kScrubberW + _kScrubberPad,
+                    _kMainSpacing),
+                sliver: SliverGrid(
+                  delegate: SliverChildBuilderDelegate(
+                    (ctx, i) {
+                      final a    = groups[letter]![i];
+                      final id   = a['Id']   as String? ?? '';
+                      final name = a['Name'] as String? ?? '';
+                      final tag  = (a['ImageTags'] as Map?)?['Primary'] as String?;
+                      return GestureDetector(
+                        onTap: () => context.push(
+                          '/artist/$id?name=${Uri.encodeComponent(name)}',
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ArtistAvatar(
+                              id:    id,
+                              name:  name,
+                              size:  avatarSize,
+                              theme: theme,
+                              circle: true,
+                              imageTag: tag,
+                            ),
+                            const SizedBox(height: 6),
+                            SizedBox(
+                              width: colW,
+                              child: Text(
+                                name,
+                                maxLines: 2,
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: theme.textColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.25,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    childCount: groups[letter]!.length,
+                  ),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount:   kColumns,
+                    crossAxisSpacing: _kGap,
+                    mainAxisSpacing:  _kMainSpacing,
+                    childAspectRatio: colW / cellH,
+                  ),
+                ),
+              ),
+            ],
+            const SliverPadding(padding: EdgeInsets.only(bottom: 110)),
+          ],
+        ),
+
+        // A-Z scrubber
+        Positioned(
+          right: 0, top: 0, bottom: 100,
+          width: _kScrubberW + _kScrubberPad,
+          child: _Scrubber(
+            letters:      letters,
+            activeLetter: _activeLetter,
+            theme:        theme,
+            onLetter: (l) {
+              if (l == _activeLetter) return;
+              setState(() => _activeLetter = l);
+              final target = offsets[l];
+              if (target != null && _artistCtrl.hasClients) {
+                final clamped = math.min(target, _artistCtrl.position.maxScrollExtent);
+                _artistCtrl.animateTo(clamped,
+                    duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+              }
+            },
+            onEnd: () => setState(() => _activeLetter = null),
+          ),
+        ),
+
+        if (_activeLetter != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  width: 76, height: 76,
+                  decoration: BoxDecoration(
+                    color: theme.accent.withAlpha(0xE0),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [BoxShadow(color: theme.accent.withAlpha(0x55), blurRadius: 24, spreadRadius: 4)],
+                  ),
+                  child: Center(
+                    child: Text(
+                      _activeLetter!,
+                      style: TextStyle(
+                        color: theme.textColor, fontSize: 40,
+                        fontWeight: FontWeight.w900, letterSpacing: -1,
                       ),
                     ),
                   ),

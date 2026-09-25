@@ -121,6 +121,26 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     return '$m:$s';
   }
 
+  void _showAlbumMenu(BuildContext context, VibeTheme theme) {
+    final artistId = _artistId ?? _tracks.firstOrNull?.artistId;
+    if (artistId == null) return;
+    // AlbumArtist is the clean primary artist name — never includes feature artists.
+    // widget.artistName can be "gLowDaKidd & EmanuelDaProphet" when opened from
+    // a track (player, ViBE Out, etc.), so we don't use it for navigation.
+    final artistName = _tracks.firstOrNull?.raw['AlbumArtist'] as String?
+        ?? widget.artistName;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AlbumContextSheet(
+        artUrl:     JellyfinApi.imageUrl(widget.albumId, size: 200),
+        albumName:  widget.albumName,
+        artistName: artistName,
+        artistId:   artistId,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final VibeTheme theme = _albumTheme ?? ref.watch(themeProvider);
@@ -235,6 +255,16 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                               ),
                             ),
                             const SizedBox(width: 12),
+                            // 3-dot menu
+                            if (_tracks.isNotEmpty)
+                              GestureDetector(
+                                onTap: () => _showAlbumMenu(context, theme),
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 4),
+                                  child: Icon(Icons.more_vert_rounded,
+                                      color: theme.textDim, size: 28),
+                                ),
+                              ),
                             // Download button
                             if (_tracks.isNotEmpty)
                               StreamBuilder<void>(
@@ -774,4 +804,112 @@ class _NavButton extends StatelessWidget {
       child: Icon(icon, color: Colors.white, size: size),
     ),
   );
+}
+
+// ── Album context sheet ───────────────────────────────────────────────────────
+
+class _AlbumContextSheet extends StatelessWidget {
+  final String artUrl;
+  final String albumName;
+  final String artistName;
+  final String artistId;
+
+  const _AlbumContextSheet({
+    required this.artUrl,
+    required this.albumName,
+    required this.artistName,
+    required this.artistId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C2E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        top: 12,
+        bottom: MediaQuery.of(context).padding.bottom + 12,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            width: 36, height: 4,
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(0x30),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: artUrl,
+                    width: 48, height: 48,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, _, _) =>
+                        Container(width: 48, height: 48, color: const Color(0xFF2A2A40)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(albumName,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(artistName,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(0x88), fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(color: Colors.white.withAlpha(0x15), height: 1),
+          const SizedBox(height: 4),
+          InkWell(
+            onTap: () {
+              Navigator.pop(context);
+              context.push(
+                '/artist/$artistId?name=${Uri.encodeComponent(artistName)}',
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+              child: Row(
+                children: [
+                  Icon(Icons.person_rounded, color: Colors.white.withAlpha(0xBB), size: 22),
+                  const SizedBox(width: 16),
+                  const Text('Go to Artist',
+                    style: TextStyle(
+                      color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
 }

@@ -144,8 +144,8 @@ class _MixDetailScreenState extends ConsumerState<MixDetailScreen> {
             slivers: [
               SliverToBoxAdapter(child: _header(theme, collage, screenW)),
               SliverToBoxAdapter(child: _buttons(theme)),
-              if (_isFire && _genres.isNotEmpty)
-                SliverToBoxAdapter(child: _genreChips(theme)),
+              if (_isFire && _genres.length >= 2)
+                SliverToBoxAdapter(child: _genreSelector(theme)),
               const SliverToBoxAdapter(child: SizedBox(height: 8)),
               SliverList(
                 delegate: SliverChildBuilderDelegate(
@@ -294,31 +294,115 @@ class _MixDetailScreenState extends ConsumerState<MixDetailScreen> {
     );
   }
 
-  Widget _genreChips(VibeTheme theme) {
-    final genres = _genres;
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection:  Axis.horizontal,
-        padding:          const EdgeInsets.symmetric(horizontal: 20),
-        children: [
-          _GenreChip(
-            label:    'All',
-            selected: _selectedGenre == null,
-            accent:   theme.accent,
-            onTap:    () => setState(() => _selectedGenre = null),
-          ),
-          ...genres.map((g) => Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: _GenreChip(
-              label:    g,
-              selected: _selectedGenre == g,
-              accent:   theme.accent,
-              onTap:    () => setState(() =>
-                  _selectedGenre = _selectedGenre == g ? null : g),
+  Widget _genreSelector(VibeTheme theme) {
+    final isFiltered = _selectedGenre != null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: GestureDetector(
+          onTap: () => _showGenrePicker(theme),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: isFiltered
+                  ? theme.accent.withAlpha(0x33)
+                  : Colors.white.withAlpha(0x0F),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isFiltered
+                    ? theme.accent.withAlpha(0x99)
+                    : Colors.white.withAlpha(0x22),
+              ),
             ),
-          )),
-        ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.tune_rounded,
+                  color: isFiltered ? theme.accentBright : Colors.white54,
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _selectedGenre ?? 'All Genres',
+                  style: TextStyle(
+                    color: isFiltered ? theme.accentBright : Colors.white60,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: isFiltered ? theme.accentBright : Colors.white38,
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showGenrePicker(VibeTheme theme) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A28),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 4),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Filter by Genre',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            _GenreOption(
+              label: 'All Genres',
+              selected: _selectedGenre == null,
+              accent: theme.accent,
+              onTap: () {
+                setState(() => _selectedGenre = null);
+                Navigator.pop(ctx);
+              },
+            ),
+            ..._genres.map((g) => _GenreOption(
+              label: g,
+              selected: _selectedGenre == g,
+              accent: theme.accent,
+              onTap: () {
+                setState(() => _selectedGenre = g);
+                Navigator.pop(ctx);
+              },
+            )),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -495,15 +579,15 @@ class _TrackRow extends StatelessWidget {
   }
 }
 
-// ── Genre chip ────────────────────────────────────────────────────────────────
+// ── Genre option (bottom sheet row) ──────────────────────────────────────────
 
-class _GenreChip extends StatelessWidget {
-  final String     label;
-  final bool       selected;
-  final Color      accent;
+class _GenreOption extends StatelessWidget {
+  final String       label;
+  final bool         selected;
+  final Color        accent;
   final VoidCallback onTap;
 
-  const _GenreChip({
+  const _GenreOption({
     required this.label,
     required this.selected,
     required this.accent,
@@ -512,29 +596,25 @@ class _GenreChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve:    Curves.easeOut,
-        padding:  const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color:        selected ? accent : Colors.white.withAlpha(0x14),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? Colors.transparent : Colors.white.withAlpha(0x22),
-          ),
-          boxShadow: selected
-              ? [BoxShadow(color: accent.withAlpha(0x55), blurRadius: 8)]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color:      selected ? Colors.white : Colors.white60,
-            fontSize:   13,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color:      selected ? Colors.white : Colors.white70,
+                  fontSize:   15,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
+            if (selected)
+              Icon(Icons.check_rounded, color: accent, size: 20),
+          ],
         ),
       ),
     );
