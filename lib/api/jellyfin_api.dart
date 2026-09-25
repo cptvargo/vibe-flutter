@@ -168,14 +168,41 @@ class JellyfinApi {
       _get('/Users/$_user/Items?AlbumArtistIds=$artistId&IncludeItemTypes=MusicAlbum'
           '&Recursive=true&Fields=PrimaryImageAspectRatio&SortBy=ProductionYear&SortOrder=Descending');
 
-  static Future<Map<String, dynamic>> getArtistTracks(String artistId, {int limit = 30}) =>
-      _get('/Users/$_user/Items?ArtistIds=$artistId&IncludeItemTypes=Audio'
-          '&Recursive=true&Fields=$_trackFields&SortBy=Random&Limit=$limit$_lp');
+  static Future<Map<String, dynamic>> getArtistTracks(String artistId, {int limit = 30}) async {
+    final res = await _get('/Users/$_user/Items?ArtistIds=$artistId&IncludeItemTypes=Audio'
+        '&Recursive=true&Fields=$_trackFields&SortBy=Random&Limit=$limit$_lp');
+    if (_alp.isEmpty || _alp == _lp) return res;
+    try {
+      final aiRes = await _get('/Users/$_user/Items?ArtistIds=$artistId&IncludeItemTypes=Audio'
+          '&Recursive=true&Fields=$_trackFields&SortBy=Random&Limit=$limit$_alp');
+      final main = (res['Items'] as List).cast<Map<String, dynamic>>();
+      final ai   = (aiRes['Items'] as List).cast<Map<String, dynamic>>();
+      final seen = <String>{}; final merged = <Map<String, dynamic>>[];
+      for (final item in [...main, ...ai]) {
+        if (seen.add(item['Id'] as String? ?? '')) merged.add(item);
+      }
+      return {...res, 'Items': merged, 'TotalRecordCount': merged.length};
+    } catch (_) { return res; }
+  }
 
-  static Future<Map<String, dynamic>> getArtistAllTracks(String artistId) =>
-      _get('/Users/$_user/Items?AlbumArtistIds=$artistId&IncludeItemTypes=Audio'
-          '&Recursive=true&Fields=$_trackFields,AlbumId'
-          '&SortBy=ProductionYear,ParentIndexNumber,IndexNumber&SortOrder=Descending,Ascending,Ascending&Limit=500$_lp');
+  static Future<Map<String, dynamic>> getArtistAllTracks(String artistId) async {
+    const _sort = '&SortBy=ProductionYear,ParentIndexNumber,IndexNumber'
+        '&SortOrder=Descending,Ascending,Ascending&Limit=500';
+    final res = await _get('/Users/$_user/Items?AlbumArtistIds=$artistId&IncludeItemTypes=Audio'
+        '&Recursive=true&Fields=$_trackFields,AlbumId$_sort$_lp');
+    if (_alp.isEmpty || _alp == _lp) return res;
+    try {
+      final aiRes = await _get('/Users/$_user/Items?AlbumArtistIds=$artistId&IncludeItemTypes=Audio'
+          '&Recursive=true&Fields=$_trackFields,AlbumId$_sort$_alp');
+      final main = (res['Items'] as List).cast<Map<String, dynamic>>();
+      final ai   = (aiRes['Items'] as List).cast<Map<String, dynamic>>();
+      final seen = <String>{}; final merged = <Map<String, dynamic>>[];
+      for (final item in [...main, ...ai]) {
+        if (seen.add(item['Id'] as String? ?? '')) merged.add(item);
+      }
+      return {...res, 'Items': merged, 'TotalRecordCount': merged.length};
+    } catch (_) { return res; }
+  }
 
   static Future<Map<String, dynamic>> getAllTracks({int limit = 500}) =>
       _get('/Users/$_user/Items?IncludeItemTypes=Audio'
