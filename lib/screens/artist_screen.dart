@@ -98,7 +98,6 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
           ),
 
           SafeArea(
-            top: false,
             bottom: false,
             child: CustomScrollView(
               slivers: [
@@ -323,9 +322,8 @@ class _ArtistHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topPad = MediaQuery.of(context).padding.top;
     return SizedBox(
-      height: 300 + topPad,
+      height: 300,
       width: double.infinity,
       child: Stack(
         fit: StackFit.expand,
