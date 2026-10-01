@@ -26,24 +26,34 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   List<Map<String, dynamic>> _albums = [];
   bool _loadingPlay = false;
   VibePalette? _palette;
+  // Resolved canonical ID — navigation from albums/player can pass sub-entity
+  // IDs (e.g. "Forrest Frank, PARTY WAVE" or a collab artist). We always
+  // resolve by artist name so the main entity is used for image + albums.
+  late String _artistId;
 
   @override
   void initState() {
     super.initState();
+    _artistId = widget.artistId;
     _loadData();
   }
 
   Future<void> _loadData() async {
+    if (widget.artistName.isNotEmpty) {
+      final resolved = await JellyfinApi.getArtistIdByName(widget.artistName);
+      if (resolved != null && mounted) setState(() => _artistId = resolved);
+      _artistId = resolved ?? widget.artistId;
+    }
     await Future.wait([
-      JellyfinApi.getArtistAlbums(widget.artistId).then((r) {
+      JellyfinApi.getArtistAlbums(_artistId).then((r) {
         if (mounted) {
           setState(() => _albums =
               ((r['Items'] as List?) ?? []).cast<Map<String, dynamic>>());
         }
       }).catchError((_) {}),
       PaletteService.extractFromUrl(
-        JellyfinApi.colorExtractionUrl(widget.artistId),
-        widget.artistId,
+        JellyfinApi.colorExtractionUrl(_artistId),
+        _artistId,
       ).then((p) {
         if (p != null && mounted) setState(() => _palette = p);
       }),
@@ -57,7 +67,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     context.push('/player');
     setState(() => _loadingPlay = true);
     try {
-      final res = await JellyfinApi.getArtistAllTracks(widget.artistId);
+      final res = await JellyfinApi.getArtistAllTracks(_artistId);
       final items = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       if (items.isEmpty) return;
       final tracks = items.map((j) => VibeTrack.fromJellyfin(j, isAI: isAI)).toList();
@@ -107,7 +117,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                     children: [
                       // Hero image — full bleed from screen top
                       _ArtistHero(
-                        artistId:   widget.artistId,
+                        artistId:   _artistId,
                         artistName: widget.artistName,
                       ),
 

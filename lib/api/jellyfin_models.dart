@@ -80,8 +80,10 @@ class VibeTrack {
     final blurHash  = blurMap != null ? blurMap.values.firstOrNull as String? : null;
     final ticks     = j['RunTimeTicks'] as int? ?? 0;
     final artistItems = (j['ArtistItems'] as List?)?.cast<Map<String, dynamic>>();
-    final artistId  = artistItems?.firstOrNull?['Id'] as String?
-                      ?? (j['AlbumArtistIds'] as List?)?.firstOrNull as String?;
+    // Prefer AlbumArtistIds (the album owner) over ArtistItems.first (which is
+    // often a feature artist on collaborative tracks, e.g. BagOnly on Forrest Frank albums).
+    final artistId  = (j['AlbumArtistIds'] as List?)?.cast<String>().firstOrNull
+                      ?? artistItems?.firstOrNull?['Id'] as String?;
     final imageTag  = (j['ImageTags'] as Map?)?['Primary'] as String?;
 
     return VibeTrack(

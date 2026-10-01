@@ -14,6 +14,7 @@ import '../services/preset_mix_service.dart';
 import '../services/recently_played_service.dart';
 import '../services/on_deck_service.dart';
 import '../theme/vibe_theme.dart';
+import '../widgets/artist_avatar.dart';
 import '../widgets/vibe_out_section.dart';
 import '../widgets/vibe_ui.dart';
 import 'mix_detail_screen.dart';
@@ -314,6 +315,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  void _openArtistMix() {
+    showModalBottomSheet<void>(
+      context:            context,
+      isScrollControlled: true,
+      backgroundColor:    Colors.transparent,
+      builder: (_) => _ArtistMixSheet(theme: ref.read(themeProvider)),
+    );
+  }
+
   void _openFireMix() {
     final tracks = ref.read(fireMixProvider).toList();
     if (tracks.isEmpty) {
@@ -499,6 +509,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 VibeFadeSlide(
                   animation: _sec(4),
                   child: _FireMixCard(theme: theme, onTap: _openFireMix),
+                ),
+
+                // ── Artist Mix ────────────────────────────────────────────────
+                const SizedBox(height: 12),
+                VibeFadeSlide(
+                  animation: _sec(4),
+                  child: _ArtistMixCard(theme: theme, onTap: _openArtistMix),
                 ),
 
                 // ── Mixed For You ─────────────────────────────────────────────
@@ -1063,6 +1080,579 @@ class _FireMixCard extends ConsumerWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Artist Mix card ───────────────────────────────────────────────────────────
+
+class _ArtistMixCard extends ConsumerWidget {
+  final VibeTheme    theme;
+  final VoidCallback onTap;
+  const _ArtistMixCard({required this.theme, required this.onTap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final artists = ref.watch(artistMixProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: VibeBounce(
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            height: 110,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(color: const Color(0xFF12082A)),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end:   Alignment.centerRight,
+                      colors: [
+                        const Color(0xFF7C3AED).withAlpha(0xEE),
+                        const Color(0xFF4C1D95).withAlpha(0xDD),
+                        const Color(0xFF7C3AED).withAlpha(0x66),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.groups_rounded, color: Colors.white, size: 40),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment:  MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              'ARTIST MIX',
+                              style: TextStyle(
+                                color:         Colors.white,
+                                fontSize:      11,
+                                fontWeight:    FontWeight.w800,
+                                letterSpacing: 1.6,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              artists.isEmpty
+                                  ? 'Pick up to 7 artists to mix'
+                                  : '${artists.length} artist${artists.length == 1 ? '' : 's'} · tap to play',
+                              style: TextStyle(
+                                color:    Colors.white.withAlpha(0xCC),
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      if (artists.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color:  Colors.white.withAlpha(0x22),
+                            shape:  BoxShape.circle,
+                            border: Border.all(color: Colors.white30),
+                          ),
+                          child: const Icon(Icons.add_rounded,
+                              color: Colors.white, size: 22),
+                        )
+                      else
+                        _OverlappingAvatars(artists: artists, theme: theme),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OverlappingAvatars extends StatelessWidget {
+  final List<ArtistMixEntry> artists;
+  final VibeTheme            theme;
+  const _OverlappingAvatars({required this.artists, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    const size    = 36.0;
+    const step    = 22.0; // how far each avatar shifts right
+    final shown   = artists.take(4).toList();
+    final width   = size + (shown.length - 1) * step;
+
+    return SizedBox(
+      width:  width,
+      height: size,
+      child: Stack(
+        children: [
+          for (var i = 0; i < shown.length; i++)
+            Positioned(
+              left: i * step,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF4C1D95), width: 2),
+                ),
+                child: ArtistAvatar(
+                  id:       shown[i].id,
+                  name:     shown[i].name,
+                  imageTag: shown[i].imageTag,
+                  size:     size,
+                  theme:    theme,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Artist Mix bottom sheet ────────────────────────────────────────────────────
+
+class _ArtistMixSheet extends ConsumerStatefulWidget {
+  final VibeTheme theme;
+  const _ArtistMixSheet({required this.theme});
+
+  @override
+  ConsumerState<_ArtistMixSheet> createState() => _ArtistMixSheetState();
+}
+
+class _ArtistMixSheetState extends ConsumerState<_ArtistMixSheet> {
+  List<Map<String, dynamic>> _allArtists = [];
+  bool   _loadingArtists = true;
+  bool   _playing        = false;
+  String _query          = '';
+  final  TextEditingController _ctrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadArtists();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadArtists() async {
+    try {
+      final results = await Future.wait([
+        JellyfinApi.getArtists(limit: 500),
+        JellyfinApi.getAIArtists(limit: 200),
+      ]);
+      if (!mounted) return;
+      final seen = <String>{};
+      final all  = [
+        ...((results[0]['Items'] as List?) ?? []).cast<Map<String, dynamic>>(),
+        ...((results[1]['Items'] as List?) ?? []).cast<Map<String, dynamic>>(),
+      ].where((a) {
+        final name = (a['Name'] as String? ?? '').trim();
+        return name.isNotEmpty && seen.add(name.toLowerCase());
+      }).toList()
+        ..sort((a, b) => (a['Name'] as String? ?? '')
+            .toLowerCase()
+            .compareTo((b['Name'] as String? ?? '').toLowerCase()));
+      if (mounted) setState(() { _allArtists = all; _loadingArtists = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingArtists = false);
+    }
+  }
+
+  List<Map<String, dynamic>> get _results {
+    if (_query.trim().isEmpty) return [];
+    final q = _query.toLowerCase();
+    return _allArtists
+        .where((a) => (a['Name'] as String? ?? '').toLowerCase().contains(q))
+        .take(20)
+        .toList();
+  }
+
+  Future<void> _play() async {
+    final artists = ref.read(artistMixProvider);
+    if (artists.isEmpty || _playing || !mounted) return;
+    setState(() => _playing = true);
+    try {
+      final fetched = await Future.wait(
+          artists.map((a) => JellyfinApi.getArtistAllTracks(a.id)));
+      final seen   = <String>{};
+      final tracks = fetched
+          .expand((r) => (r['Items'] as List? ?? []).cast<Map<String, dynamic>>())
+          .where((t) => seen.add(t['Id'] as String? ?? ''))
+          .map((t) => VibeTrack.fromJellyfin(t))
+          .toList()..shuffle();
+      if (tracks.isEmpty || !mounted) return;
+      ref.read(playerOpenProvider.notifier).state = true;
+      ref.read(audioHandlerProvider).playTracks(
+          tracks, startIndex: 0, playbackContext: 'shuffle');
+      if (mounted) Navigator.of(context).pop();
+      if (mounted) context.push('/player');
+    } catch (_) {
+      if (mounted) setState(() => _playing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final artists = ref.watch(artistMixProvider);
+    final results = _results;
+    final bottom  = MediaQuery.of(context).viewInsets.bottom;
+    final canPlay = artists.isNotEmpty && !_playing;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color:        Color(0xFF0E0E1A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Drag handle ───────────────────────────────────────────
+            const SizedBox(height: 12),
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(0x28),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Header ────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  const Icon(Icons.groups_rounded,
+                      color: Color(0xFF9F7AEA), size: 22),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Artist Mix',
+                    style: TextStyle(
+                      color:      Colors.white,
+                      fontSize:   18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (artists.isNotEmpty)
+                    Text(
+                      '${artists.length}/7',
+                      style: TextStyle(
+                        color:      Colors.white.withAlpha(0x66),
+                        fontSize:   13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded,
+                        color: Colors.white.withAlpha(0x66), size: 20),
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withAlpha(0x10),
+                      shape: const CircleBorder(),
+                      padding: const EdgeInsets.all(6),
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Search bar ────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  color:        Colors.white.withAlpha(0x0F),
+                  borderRadius: BorderRadius.circular(14),
+                  border:       Border.all(color: Colors.white.withAlpha(0x0F)),
+                ),
+                child: TextField(
+                  controller:  _ctrl,
+                  style:       const TextStyle(color: Colors.white, fontSize: 15),
+                  autofocus:   artists.isEmpty,
+                  decoration:  InputDecoration(
+                    hintText:  'Search artists…',
+                    hintStyle: TextStyle(color: Colors.white.withAlpha(0x4D)),
+                    prefixIcon: Icon(Icons.search_rounded,
+                        color: Colors.white.withAlpha(0x4D), size: 20),
+                    suffixIcon: _query.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.close_rounded,
+                                color: Colors.white.withAlpha(0x66), size: 18),
+                            onPressed: () {
+                              _ctrl.clear();
+                              setState(() => _query = '');
+                            },
+                          )
+                        : null,
+                    border:        InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onChanged: (v) => setState(() => _query = v),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Selected artists ──────────────────────────────────────
+            if (artists.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'YOUR MIX',
+                    style: TextStyle(
+                      color:         Colors.white.withAlpha(0x55),
+                      fontSize:      11,
+                      fontWeight:    FontWeight.w700,
+                      letterSpacing: 1.3,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 88,
+                child: ListView.separated(
+                  scrollDirection:  Axis.horizontal,
+                  padding:          const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount:        artists.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 14),
+                  itemBuilder: (context, i) {
+                    final a = artists[i];
+                    return Column(
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            ArtistAvatar(
+                              id:       a.id,
+                              name:     a.name,
+                              imageTag: a.imageTag,
+                              size:     56,
+                              theme:    widget.theme,
+                            ),
+                            Positioned(
+                              top:   -4,
+                              right: -4,
+                              child: GestureDetector(
+                                onTap: () => ref
+                                    .read(artistMixProvider.notifier)
+                                    .remove(a.id),
+                                child: Container(
+                                  width: 20, height: 20,
+                                  decoration: BoxDecoration(
+                                    color:  const Color(0xFF0E0E1A),
+                                    shape:  BoxShape.circle,
+                                    border: Border.all(
+                                        color: Colors.white.withAlpha(0x44)),
+                                  ),
+                                  child: const Icon(Icons.close_rounded,
+                                      color: Colors.white, size: 12),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: 56,
+                          child: Text(
+                            a.name,
+                            maxLines:  1,
+                            overflow:  TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color:      Colors.white.withAlpha(0xAA),
+                              fontSize:   10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Search results ────────────────────────────────────────
+            if (_query.isNotEmpty)
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.3,
+                ),
+                child: _loadingArtists
+                    ? const Padding(
+                        padding: EdgeInsets.all(20),
+                        child:   Center(child: CircularProgressIndicator()),
+                      )
+                    : results.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.all(20),
+                            child:   Center(
+                              child: Text(
+                                'No artists found',
+                                style: TextStyle(
+                                    color:    Colors.white.withAlpha(0x44),
+                                    fontSize: 14),
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            padding:    EdgeInsets.zero,
+                            itemCount:  results.length,
+                            itemBuilder: (context, i) {
+                              final a        = results[i];
+                              final id       = a['Id']   as String? ?? '';
+                              final name     = a['Name'] as String? ?? '';
+                              final imageTag = (a['ImageTags'] as Map?)?['Primary'] as String?;
+                              final already  = ref.watch(artistMixProvider
+                                  .select((list) => list.any((e) => e.id == id)));
+                              final full     = ref.watch(artistMixProvider
+                                  .select((list) => list.length >= 7));
+
+                              return Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: already || full
+                                      ? null
+                                      : () {
+                                          ref
+                                              .read(artistMixProvider.notifier)
+                                              .add(ArtistMixEntry(
+                                                id:       id,
+                                                name:     name,
+                                                imageTag: imageTag,
+                                              ));
+                                          _ctrl.clear();
+                                          setState(() => _query = '');
+                                        },
+                                  splashColor: const Color(0xFF7C3AED).withAlpha(0x22),
+                                  child: Opacity(
+                                    opacity: already || full ? 0.4 : 1.0,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 20, vertical: 10),
+                                      child: Row(
+                                        children: [
+                                          ArtistAvatar(
+                                            id:       id,
+                                            name:     name,
+                                            imageTag: imageTag,
+                                            size:     44,
+                                            theme:    widget.theme,
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Text(
+                                              name,
+                                              style: const TextStyle(
+                                                color:      Colors.white,
+                                                fontSize:   15,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                          if (already)
+                                            Icon(Icons.check_rounded,
+                                                color: const Color(0xFF9F7AEA),
+                                                size: 18)
+                                          else if (!full)
+                                            Icon(Icons.add_rounded,
+                                                color: Colors.white.withAlpha(0x44),
+                                                size: 20),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+              )
+            else if (artists.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'Search above to add artists',
+                  style: TextStyle(
+                    color:    Colors.white.withAlpha(0x33),
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 8),
+
+            // ── Play button ───────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: SizedBox(
+                width:  double.infinity,
+                height: 52,
+                child: AnimatedOpacity(
+                  opacity:  canPlay ? 1.0 : 0.35,
+                  duration: const Duration(milliseconds: 200),
+                  child: ElevatedButton.icon(
+                    onPressed: canPlay ? _play : null,
+                    icon: _playing
+                        ? const SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color:       Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.shuffle_rounded,
+                            color: Colors.white, size: 20),
+                    label: Text(
+                      _playing ? 'Loading…' : 'Play All',
+                      style: const TextStyle(
+                        color:      Colors.white,
+                        fontSize:   15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C3AED),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

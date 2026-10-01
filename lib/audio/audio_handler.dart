@@ -387,8 +387,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ── Hard skip (immediate cut, no fade) ───────────────────────────────────
   Future<void> _hardSkipTo(int index) async {
+    _loading = true; // set before cancel so position ticks during cancel are suppressed
     await _cancelCrossfade();
-    _loading = true;
 
     _reportStopped();
     _queueIdx        = index;
@@ -480,8 +480,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // switching albums doesn't lose the in-progress session.
     _saveAlbumSession(_primary.position);
     _userPaused = false; // new queue = new intent to play
+    _loading = true; // set before cancel so position ticks during cancel are suppressed
     await _cancelCrossfade();
-    _loading = true;
     _reportStopped();
 
     _queue           = tracks.map((t) => _toMediaItem(t, playbackContext: playbackContext)).toList();
@@ -673,10 +673,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToNext() async {
-    if (_crossfading) {
-      await _hardSkipTo(_queueIdx);
-      return;
-    }
+    // During a crossfade _queueIdx is already the incoming track, so _nextIndex
+    // correctly resolves to the track after it — no special-case needed.
     final next = _nextIndex;
     if (next == null) return;
     await _hardSkipTo(next);
@@ -684,6 +682,17 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToPrevious() async {
+    if (_crossfading) {
+      // During a crossfade the user sees the secondary (incoming) track.
+      // Mirror the normal ">3 s → restart / ≤3 s → go back" logic against secondary.
+      if (_secondary.position.inSeconds > 3) {
+        await _hardSkipTo(_queueIdx); // restart the incoming track from 0
+      } else {
+        final prev = _prevIndex; // _queueIdx is already at N+1, so prev = N
+        if (prev != null) await _hardSkipTo(prev);
+      }
+      return;
+    }
     if (_primary.position.inSeconds > 3) {
       await _primary.seek(Duration.zero);
       return;

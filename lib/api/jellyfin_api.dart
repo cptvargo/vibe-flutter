@@ -77,17 +77,19 @@ class JellyfinApi {
     try {
       final ai = await _get('/Users/$_user/Items?SortBy=DateCreated&SortOrder=Descending'
           '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio$_alp');
-      // Interleave both Jellyfin-sorted lists so true recency from each library is preserved
       final mainItems = ((main['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       final aiItems   = ((ai['Items']   as List?) ?? []).cast<Map<String, dynamic>>();
       final seen    = <String>{};
-      final merged  = <Map<String, dynamic>>[];
-      final mi = mainItems.length;
-      final ai2 = aiItems.length;
-      for (var i = 0; merged.length < limit && (i < mi || i < ai2); i++) {
-        if (i < mi)  { final a = mainItems[i]; if (seen.add(a['Id'] as String? ?? '')) merged.add(a); }
-        if (i < ai2) { final a = aiItems[i];   if (seen.add(a['Id'] as String? ?? '')) merged.add(a); }
+      final all     = <Map<String, dynamic>>[];
+      for (final a in [...mainItems, ...aiItems]) {
+        if (seen.add(a['Id'] as String? ?? '')) all.add(a);
       }
+      all.sort((a, b) {
+        final da = a['DateCreated'] as String? ?? '';
+        final db = b['DateCreated'] as String? ?? '';
+        return db.compareTo(da);
+      });
+      final merged = all.take(limit).toList();
       return {...main, 'Items': merged, 'TotalRecordCount': merged.length};
     } catch (_) {
       return main;
@@ -153,12 +155,15 @@ class JellyfinApi {
 
   static Future<String?> getArtistIdByName(String name) async {
     try {
-      final q   = Uri.encodeComponent(name);
-      final res = await _get('/Artists/AlbumArtists?UserId=$_user'
-          '&SearchTerm=$q&Limit=1&Fields=PrimaryImageAspectRatio$_lp');
-      final items = (res['Items'] as List?) ?? [];
-      if (items.isEmpty) return null;
-      return (items.first as Map<String, dynamic>)['Id'] as String?;
+      final q = Uri.encodeComponent(name);
+      // Try main library first, then AI library
+      for (final lib in [_lp, if (_alp.isNotEmpty && _alp != _lp) _alp]) {
+        final res = await _get('/Artists/AlbumArtists?UserId=$_user'
+            '&SearchTerm=$q&Limit=1&Fields=PrimaryImageAspectRatio$lib');
+        final items = (res['Items'] as List?) ?? [];
+        if (items.isNotEmpty) return (items.first as Map<String, dynamic>)['Id'] as String?;
+      }
+      return null;
     } catch (_) {
       return null;
     }

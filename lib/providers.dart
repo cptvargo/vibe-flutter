@@ -1,11 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api/jellyfin_models.dart';
 import 'audio/audio_handler.dart';
+import 'services/artist_mix_service.dart';
 import 'services/fire_mix_service.dart';
 import 'services/preset_mix_service.dart';
 import 'theme/ambient_theme.dart';
 import 'theme/palette_service.dart';
 import 'theme/vibe_theme.dart';
+
+export 'services/artist_mix_service.dart' show ArtistMixEntry;
 
 // Audio handler — initialized in main.dart and overridden in ProviderScope
 final audioHandlerProvider = Provider<VibeAudioHandler>(
@@ -65,6 +68,31 @@ class FireMixNotifier extends StateNotifier<List<VibeTrack>> {
 final fireMixProvider =
     StateNotifierProvider<FireMixNotifier, List<VibeTrack>>(
   (ref) => FireMixNotifier(),
+);
+
+// Artist Mix — up to 7 pinned artists whose songs are merged and shuffled on play
+class ArtistMixNotifier extends StateNotifier<List<ArtistMixEntry>> {
+  ArtistMixNotifier() : super([]) { _load(); }
+
+  Future<void> _load() async => state = await ArtistMixService.load();
+
+  Future<void> add(ArtistMixEntry artist) async {
+    if (state.length >= 7 || state.any((a) => a.id == artist.id)) return;
+    state = [...state, artist];
+    await ArtistMixService.save(state);
+  }
+
+  Future<void> remove(String artistId) async {
+    state = state.where((a) => a.id != artistId).toList();
+    await ArtistMixService.save(state);
+  }
+
+  bool contains(String artistId) => state.any((a) => a.id == artistId);
+}
+
+final artistMixProvider =
+    StateNotifierProvider<ArtistMixNotifier, List<ArtistMixEntry>>(
+  (ref) => ArtistMixNotifier(),
 );
 
 // Preset mixes — generated once per day, cached in SharedPreferences.
