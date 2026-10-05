@@ -6,7 +6,7 @@ import '../theme/vibe_theme.dart';
 
 class CreatePlaylistSheet extends StatefulWidget {
   final VibeTheme theme;
-  final VoidCallback? onCreated;
+  final void Function(String playlistId)? onCreated;
 
   const CreatePlaylistSheet({super.key, required this.theme, this.onCreated});
 
@@ -54,7 +54,7 @@ class _CreatePlaylistSheetState extends State<CreatePlaylistSheet> {
         await JellyfinApi.uploadPlaylistImage(id, _imageBytes!, _imageMimeType);
       }
       if (mounted) Navigator.pop(context);
-      widget.onCreated?.call();
+      if (id != null) widget.onCreated?.call(id);
     } catch (_) {
       if (mounted) setState(() => _creating = false);
     }

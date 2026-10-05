@@ -11,6 +11,7 @@ import '../services/download_service.dart';
 import '../services/on_deck_service.dart';
 import '../theme/palette_service.dart';
 import '../theme/vibe_theme.dart';
+import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/mini_player.dart';
 
 class AlbumScreen extends ConsumerStatefulWidget {
@@ -90,6 +91,16 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     if (mounted && results.isNotEmpty) {
       setState(() => _similarArtists = results);
     }
+  }
+
+  void _showTrackMenu(BuildContext ctx, VibeTrack track, VibeTheme theme) {
+    showModalBottomSheet<void>(
+      context:            ctx,
+      isScrollControlled: true,
+      backgroundColor:    Colors.transparent,
+      builder: (_) => _AlbumTrackMenu(
+        track: track, theme: theme, ref: ref, navContext: ctx),
+    );
   }
 
   Future<void> _play(int index) async {
@@ -461,6 +472,21 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                                         _fmt(track.duration),
                                         style: TextStyle(
                                             color: theme.textFaint, fontSize: 12),
+                                      ),
+                                      // Three-dots
+                                      GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => _showTrackMenu(
+                                            context, track, theme),
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                              10, 10, 0, 10),
+                                          child: Icon(
+                                            Icons.more_vert_rounded,
+                                            color: theme.textFaint,
+                                            size:  18,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -909,6 +935,126 @@ class _AlbumContextSheet extends StatelessWidget {
           ),
           const SizedBox(height: 4),
         ],
+      ),
+    );
+  }
+}
+
+// ── Per-track context menu for album screen ───────────────────────────────────
+
+class _AlbumTrackMenu extends StatelessWidget {
+  final VibeTrack    track;
+  final VibeTheme    theme;
+  final WidgetRef    ref;
+  final BuildContext navContext;
+
+  const _AlbumTrackMenu({
+    required this.track,
+    required this.theme,
+    required this.ref,
+    required this.navContext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        decoration: const BoxDecoration(
+          color:        Color(0xFF12121E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color:        Colors.white.withAlpha(0x33),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Track info
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(
+                      width: 40, height: 40,
+                      child: track.artworkUrl.isNotEmpty
+                          ? Image.network(track.artworkUrl, fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  Container(color: const Color(0xFF1E1B4B)))
+                          : Container(color: const Color(0xFF1E1B4B)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(track.title,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                        Text(track.artist,
+                            style: const TextStyle(
+                                color: Color(0xFFAAAAAA), fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0x15FFFFFF)),
+            const SizedBox(height: 4),
+            _menuItem(context, Icons.skip_next_rounded, 'Play Next', () {
+              Navigator.pop(context);
+              ref.read(audioHandlerProvider).playNext(track);
+            }),
+            _menuItem(context, Icons.queue_music_rounded, 'Add to Queue', () {
+              Navigator.pop(context);
+              ref.read(audioHandlerProvider).addToQueue(track);
+            }),
+            _menuItem(context, Icons.playlist_add_rounded, 'Add to Playlist', () {
+              Navigator.pop(context);
+              showModalBottomSheet<void>(
+                context:            navContext,
+                isScrollControlled: true,
+                backgroundColor:    Colors.transparent,
+                builder: (_) => AddToPlaylistSheet(
+                    trackId: track.id, theme: theme),
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _menuItem(BuildContext ctx, IconData icon, String label,
+      VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFFAAAAAA), size: 22),
+            const SizedBox(width: 16),
+            Text(label,
+                style: const TextStyle(color: Colors.white, fontSize: 15)),
+          ],
+        ),
       ),
     );
   }

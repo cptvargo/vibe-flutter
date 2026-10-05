@@ -364,7 +364,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       backgroundColor: Colors.transparent,
       builder: (_) => CreatePlaylistSheet(
         theme:     theme,
-        onCreated: () => ScaffoldMessenger.of(context).showSnackBar(
+        onCreated: (_) => ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content:  Text('Playlist created'),
             duration: Duration(seconds: 2),

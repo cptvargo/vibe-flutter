@@ -13,6 +13,7 @@ import '../providers.dart';
 import '../services/download_service.dart';
 import '../services/vibe_out_service.dart';
 import '../theme/vibe_theme.dart';
+import 'add_to_playlist_sheet.dart';
 
 const _kPageCount = 7;
 const _kPerPage   = 4;
@@ -432,6 +433,16 @@ class _TrackMenuState extends State<_TrackMenu> {
     if (mounted) setState(() => _sharing = false);
   }
 
+  void _addToPlaylist() {
+    Navigator.pop(context);
+    showModalBottomSheet<void>(
+      context:            widget.context,
+      isScrollControlled: true,
+      backgroundColor:    Colors.transparent,
+      builder: (_) => AddToPlaylistSheet(trackId: _t.id, theme: _th),
+    );
+  }
+
   void _removeFromVibeOut() {
     Navigator.pop(context);
     widget.onRemove();
@@ -512,6 +523,11 @@ class _TrackMenuState extends State<_TrackMenu> {
               icon:  Icons.queue_music_rounded,
               label: 'Add to Queue',
               onTap: _addToQueue,
+            ),
+            _MenuItem(
+              icon:  Icons.playlist_add_rounded,
+              label: 'Add to Playlist',
+              onTap: _addToPlaylist,
             ),
             _MenuItem(
               icon:  Icons.album_rounded,

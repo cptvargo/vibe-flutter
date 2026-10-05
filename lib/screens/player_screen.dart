@@ -15,6 +15,7 @@ import '../audio/audio_handler.dart';
 import '../providers.dart';
 import '../theme/ambient_theme.dart';
 import '../theme/vibe_theme.dart';
+import '../widgets/add_to_playlist_sheet.dart';
 
 const _kTopBarH        = 56.0;   // drag handle + options row
 const _kControlsPanelH = 268.0;
@@ -548,6 +549,22 @@ class _ContentState extends ConsumerState<_Content> {
                 color: Colors.white.withAlpha(0x44),
                 borderRadius: BorderRadius.circular(2),
               ),
+            ),
+            ListTile(
+              leading: Icon(Icons.playlist_add_rounded,
+                  color: widget.theme.accentBright, size: 26),
+              title: Text('Add to Playlist',
+                  style: TextStyle(color: widget.theme.textColor)),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                showModalBottomSheet<void>(
+                  context:            context,
+                  isScrollControlled: true,
+                  backgroundColor:    Colors.transparent,
+                  builder: (_) => AddToPlaylistSheet(
+                      trackId: item.id, theme: widget.theme),
+                );
+              },
             ),
             if (albumId != null)
               ListTile(
