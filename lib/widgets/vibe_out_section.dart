@@ -392,9 +392,12 @@ class _TrackMenuState extends State<_TrackMenu> {
   void _goToArtist() {
     Navigator.pop(context);
     if (_t.artistId == null || _t.artistId!.isEmpty) return;
+    final albumArtist = (_t.raw['AlbumArtist'] as String?)?.isNotEmpty == true
+        ? _t.raw['AlbumArtist'] as String
+        : _t.artist.split(' & ').first;
     widget.context.push(
       '/artist/${_t.artistId}'
-      '?name=${Uri.encodeComponent(_t.artist)}',
+      '?name=${Uri.encodeComponent(albumArtist)}',
     );
   }
 

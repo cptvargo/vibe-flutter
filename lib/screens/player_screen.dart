@@ -580,11 +580,14 @@ class _ContentState extends ConsumerState<_Content> {
                 onTap: () async {
                   Navigator.pop(sheetCtx);
                   ref.read(playerOpenProvider.notifier).state = false;
-                  String? id = artistId ?? await JellyfinApi.getArtistIdByName(item.artist!);
+                  final albumArtist = item.extras?['albumArtist'] as String?
+                      ?? item.artist?.split(' & ').first
+                      ?? '';
+                  String? id = artistId ?? await JellyfinApi.getArtistIdByName(albumArtist);
                   if (id != null) {
                     router.go(
                       '/artist/$id'
-                      '?name=${Uri.encodeComponent(item.artist ?? '')}',
+                      '?name=${Uri.encodeComponent(albumArtist)}',
                     );
                   }
                 },

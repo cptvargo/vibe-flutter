@@ -42,6 +42,9 @@ MediaItem _toMediaItem(VibeTrack t, {String playbackContext = 'album'}) {
       'url':             url,
       'albumId':         t.albumId,
       'artistId':        t.artistId,
+      'albumArtist':     (t.raw['AlbumArtist'] as String?)?.isNotEmpty == true
+                           ? t.raw['AlbumArtist'] as String
+                           : t.artist.split(' & ').first,
       'colorUrl':        t.colorUrl,
       'blurHash':        t.blurHash,
       'durationMicros':  t.duration.inMicroseconds,
@@ -636,6 +639,9 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
         await _primary.setVolume(1.0);
         await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
         _reportStarted(item.id);
+        // Cold-start: queue has only this one track. Fill it from InstantMix in
+        // the background so playback continues past this single restored track.
+        _coldStartAutoFill(item.id);
       } catch (_) {
         _loading = false;
         return;
@@ -644,9 +650,22 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     return _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
   }
 
+  // Fetch an InstantMix for the cold-start seed track and append results to
+  // the queue. Only runs when the queue is exactly 1 item (cold-start guard).
+  void _coldStartAutoFill(String trackId) {
+    JellyfinApi.getInstantMixTracks(trackId, limit: 50).then((tracks) {
+      if (_queue.length != 1 || _queueIdx != 0) return;
+      final newItems = tracks.skip(1).map((t) => _toMediaItem(t)).toList();
+      if (newItems.isEmpty) return;
+      _queue = [_queue[0], ...newItems];
+      queue.add(List.unmodifiable(_queue));
+    }).catchError((_) {});
+  }
+
   @override
   Future<void> pause() async {
     _userPaused = true;
+    _preloaded  = false; // discard any stale preload; re-preload fresh on resume
     await _primary.pause();
     // Save immediately on pause so On Deck / Jump Back In update without
     // waiting for the next periodic tick.
