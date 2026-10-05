@@ -77,6 +77,8 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Vibe uses audio session APIs for music playback. Microphone access is not used.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Vibe needs photo access to set custom artwork on your playlists.</string>
 	<!-- Background audio playback — required for music to continue when screen locks -->
 	<key>UIBackgroundModes</key>
 	<array>

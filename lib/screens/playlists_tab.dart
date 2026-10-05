@@ -37,16 +37,6 @@ class _PlaylistsTabState extends ConsumerState<PlaylistsTab> {
     }
   }
 
-  Future<void> _createPlaylist() async {
-    final ctrl = TextEditingController();
-    final name = await _nameDialog(ctrl);
-    if (name == null || name.isEmpty) return;
-    try {
-      await JellyfinApi.createPlaylist(name);
-      await _load();
-    } catch (_) {}
-  }
-
   Future<void> _deletePlaylist(Map<String, dynamic> playlist) async {
     final id   = playlist['Id']   as String;
     final name = playlist['Name'] as String? ?? 'Playlist';
@@ -90,42 +80,6 @@ class _PlaylistsTabState extends ConsumerState<PlaylistsTab> {
     );
   }
 
-  Future<String?> _nameDialog(TextEditingController ctrl) =>
-      showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF111119),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('New Playlist',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            style: const TextStyle(color: Colors.white),
-            cursorColor: const Color(0xFFA855F7),
-            decoration: const InputDecoration(
-              hintText: 'Playlist name',
-              hintStyle: TextStyle(color: Color(0xFF5C5C78)),
-              enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF2E2E48))),
-              focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFFA855F7))),
-            ),
-            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF5C5C78))),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Create',
-                  style: TextStyle(color: Color(0xFFA855F7), fontWeight: FontWeight.w700)),
-            ),
-          ],
-        ),
-      );
 
   @override
   Widget build(BuildContext context) {
@@ -147,7 +101,7 @@ class _PlaylistsTabState extends ConsumerState<PlaylistsTab> {
                 Text('No playlists yet',
                     style: TextStyle(color: theme.textDim, fontSize: 15)),
                 const SizedBox(height: 6),
-                Text('Tap + to create one',
+                Text('Create one from the home screen',
                     style: TextStyle(color: theme.textFaint, fontSize: 13)),
               ],
             ),
@@ -224,29 +178,6 @@ class _PlaylistsTabState extends ConsumerState<PlaylistsTab> {
             },
           ),
 
-        // Create playlist FAB
-        Positioned(
-          right: 20,
-          bottom: 110,
-          child: GestureDetector(
-            onTap: _createPlaylist,
-            child: Container(
-              width: 52, height: 52,
-              decoration: BoxDecoration(
-                color: theme.accent,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.accent.withAlpha(0x66),
-                    blurRadius: 16,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
-            ),
-          ),
-        ),
       ],
     );
   }

@@ -15,6 +15,7 @@ import '../services/recently_played_service.dart';
 import '../services/on_deck_service.dart';
 import '../theme/vibe_theme.dart';
 import '../widgets/artist_avatar.dart';
+import '../widgets/create_playlist_sheet.dart';
 import '../widgets/vibe_out_section.dart';
 import '../widgets/vibe_ui.dart';
 import 'mix_detail_screen.dart';
@@ -356,6 +357,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  void _openCreatePlaylist(VibeTheme theme) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CreatePlaylistSheet(
+        theme:     theme,
+        onCreated: () => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:  Text('Playlist created'),
+            duration: Duration(seconds: 2),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
@@ -525,8 +543,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 const SizedBox(height: 14),
                 VibeFadeSlide(animation: _sec(5),
                   child: _MixedForYouRow(
-                    theme:  theme,
-                    onOpen: _openPresetMix,
+                    theme:            theme,
+                    onOpen:           _openPresetMix,
+                    onCreatePlaylist: () => _openCreatePlaylist(theme),
                   ),
                 ),
 
@@ -1664,7 +1683,12 @@ class _ArtistMixSheetState extends ConsumerState<_ArtistMixSheet> {
 class _MixedForYouRow extends ConsumerWidget {
   final VibeTheme              theme;
   final void Function(VibeMix) onOpen;
-  const _MixedForYouRow({required this.theme, required this.onOpen});
+  final VoidCallback           onCreatePlaylist;
+  const _MixedForYouRow({
+    required this.theme,
+    required this.onOpen,
+    required this.onCreatePlaylist,
+  });
 
   static const _kCardW = 148.0;
 
@@ -1677,39 +1701,44 @@ class _MixedForYouRow extends ConsumerWidget {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding:         const EdgeInsets.symmetric(horizontal: 20),
-          itemCount:       4,
+          itemCount:       5, // 4 shimmer + 1 create card placeholder
           separatorBuilder: (_, _) => const SizedBox(width: 14),
-          itemBuilder: (_, i) => _shimmer(_kCardW),
+          itemBuilder: (_, i) => i < 4
+              ? _shimmer(_kCardW)
+              : _CreatePlaylistCard(theme: theme, size: _kCardW, onTap: onCreatePlaylist),
         ),
       ),
-      error: (_, _) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Text('Could not generate mixes',
-            style: TextStyle(color: theme.textFaint, fontSize: 13)),
+      error: (_, _) => SizedBox(
+        height: _kCardW + 52,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding:         const EdgeInsets.symmetric(horizontal: 20),
+          children: [
+            _CreatePlaylistCard(theme: theme, size: _kCardW, onTap: onCreatePlaylist),
+          ],
+        ),
       ),
       data: (mixes) {
-        if (mixes.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
-              'Add more albums to unlock personalised mixes',
-              style: TextStyle(color: theme.textFaint, fontSize: 13),
-            ),
-          );
-        }
+        final visible = mixes.take(4).toList();
         return SizedBox(
           height: _kCardW + 52,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding:         const EdgeInsets.symmetric(horizontal: 20),
-            itemCount:       mixes.length,
+            itemCount:       visible.length + 1, // mixes + create card
             separatorBuilder: (_, _) => const SizedBox(width: 14),
-            itemBuilder: (_, i) => _VibeMixCard(
-              mix:   mixes[i],
-              theme: theme,
-              size:  _kCardW,
-              onTap: () => onOpen(mixes[i]),
-            ),
+            itemBuilder: (_, i) {
+              if (i < visible.length) {
+                return _VibeMixCard(
+                  mix:   visible[i],
+                  theme: theme,
+                  size:  _kCardW,
+                  onTap: () => onOpen(visible[i]),
+                );
+              }
+              return _CreatePlaylistCard(
+                  theme: theme, size: _kCardW, onTap: onCreatePlaylist);
+            },
           ),
         );
       },
@@ -1724,6 +1753,75 @@ class _MixedForYouRow extends ConsumerWidget {
       borderRadius: BorderRadius.circular(12),
     ),
   );
+}
+
+// ── Create playlist card ──────────────────────────────────────────────────────
+
+class _CreatePlaylistCard extends StatelessWidget {
+  final VibeTheme    theme;
+  final double       size;
+  final VoidCallback onTap;
+  const _CreatePlaylistCard({
+    required this.theme,
+    required this.size,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return VibeBounce(
+      onTap: onTap,
+      child: SizedBox(
+        width: size,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color:      const Color(0xFF7C3AED).withAlpha(0x44),
+                    blurRadius: 14,
+                    offset:     const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: size, height: size,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin:  Alignment.topLeft,
+                      end:    Alignment.bottomRight,
+                      colors: [Color(0xFF4C1D95), Color(0xFF1E1B4B)],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.playlist_add_rounded,
+                    color: Colors.white54,
+                    size:  52,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('New Playlist',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color:      theme.textColor,
+                    fontSize:   13,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            Text('Create your own',
+                style: TextStyle(color: theme.textFaint, fontSize: 11)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── Single preset mix card ────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../config/jellyfin_config.dart';
 import '../services/genre_cluster_service.dart';
@@ -435,6 +436,19 @@ class JellyfinApi {
 
   static Future<void> deletePlaylist(String playlistId) async {
     await http.delete(Uri.parse('$_base/Items/$playlistId'), headers: _headers);
+  }
+
+  static Future<void> uploadPlaylistImage(
+      String playlistId, Uint8List bytes, String mimeType) async {
+    final res = await http.post(
+      Uri.parse('$_base/Items/$playlistId/Images/Primary'),
+      headers: {
+        'Content-Type':         mimeType,
+        'X-Emby-Authorization': _headers['X-Emby-Authorization']!,
+      },
+      body: bytes,
+    );
+    if (res.statusCode >= 400) throw Exception('HTTP ${res.statusCode}');
   }
 
   static Future<Map<String, dynamic>> getPlaylistItems(String playlistId) =>
