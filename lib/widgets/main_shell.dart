@@ -19,7 +19,8 @@ import 'top_nav.dart';
 import 'mini_player.dart';
 import 'desktop_player_bar.dart';
 
-const _kDesktopBreakpoint = 720.0;
+const _kDesktopBreakpoint  = 720.0;
+const _kLandscapeRailWidth = 64.0;
 
 const _kBaseTabs = [
   (id: 'home',     label: 'Home',     icon: Icons.home_outlined,          activeIcon: Icons.home_rounded),
@@ -122,7 +123,8 @@ class _MainShellState extends ConsumerState<MainShell> {
         }
       },
     );
-    final width   = MediaQuery.sizeOf(context).width;
+    final isLandscape = ref.watch(landscapeModeProvider);
+    final width       = MediaQuery.sizeOf(context).width;
 
     final ambientGlow = Positioned.fill(
       child: IgnorePointer(
@@ -140,6 +142,38 @@ class _MainShellState extends ConsumerState<MainShell> {
         ),
       ),
     );
+
+    // ── Landscape mode ──────────────────────────────────────────────────────────
+    if (isLandscape) {
+      return Scaffold(
+        backgroundColor: theme.background,
+        body: Stack(
+          children: [
+            ambientGlow,
+            Row(
+              children: [
+                _LandscapeRail(
+                  activeTab:   _activeTab,
+                  tabs:        tabs,
+                  onTabChange: (tab) => setState(() => _activeTab = tab),
+                  theme:       theme,
+                  ambient:     ambient,
+                ),
+                VerticalDivider(
+                  width: 1, thickness: 1,
+                  color: Colors.white.withAlpha(0x0F),
+                ),
+                Expanded(child: _body(theme)),
+              ],
+            ),
+            Positioned(
+              left: _kLandscapeRailWidth, right: 0, bottom: 0,
+              child: const MiniPlayer(),
+            ),
+          ],
+        ),
+      );
+    }
 
     if (width >= _kDesktopBreakpoint) {
       // ── Desktop layout ──────────────────────────────────────────────────────
@@ -204,6 +238,87 @@ class _MainShellState extends ConsumerState<MainShell> {
           ),
           const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
         ],
+      ),
+    );
+  }
+}
+
+// ── Landscape icon rail ───────────────────────────────────────────────────────
+
+class _LandscapeRail extends StatelessWidget {
+  final String activeTab;
+  final List<_TabDef> tabs;
+  final ValueChanged<String> onTabChange;
+  final dynamic theme;
+  final dynamic ambient;
+
+  const _LandscapeRail({
+    required this.activeTab,
+    required this.tabs,
+    required this.onTabChange,
+    required this.theme,
+    required this.ambient,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          width: _kLandscapeRailWidth,
+          color: Colors.black.withAlpha(0x55),
+          child: Column(
+            children: [
+              // ViBE logo mark
+              Padding(
+                padding: const EdgeInsets.only(top: 20, bottom: 16),
+                child: Text(
+                  'V',
+                  style: TextStyle(
+                    color:       theme.accentBright,
+                    fontSize:    20,
+                    fontWeight:  FontWeight.w900,
+                    letterSpacing: 1,
+                    shadows: [
+                      Shadow(color: theme.accentBright.withAlpha(0xCC), blurRadius: 4),
+                    ],
+                  ),
+                ),
+              ),
+              // Nav icons
+              ...tabs.map((tab) {
+                final isActive = activeTab == tab.id;
+                return GestureDetector(
+                  onTap: () => onTabChange(tab.id),
+                  behavior: HitTestBehavior.opaque,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 44,
+                    height: 44,
+                    margin: const EdgeInsets.symmetric(vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? theme.accentBright.withAlpha(0x1E)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                      border: isActive
+                          ? Border.all(color: theme.accentBright.withAlpha(0x22))
+                          : null,
+                    ),
+                    child: Icon(
+                      isActive ? tab.activeIcon : tab.icon,
+                      size: 20,
+                      color: isActive
+                          ? theme.accentBright
+                          : theme.accentBright.withAlpha(0x55),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
       ),
     );
   }
