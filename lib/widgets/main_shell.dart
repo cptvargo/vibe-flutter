@@ -150,21 +150,38 @@ class _MainShellState extends ConsumerState<MainShell> {
         body: Stack(
           children: [
             ambientGlow,
-            Row(
-              children: [
-                _LandscapeRail(
-                  activeTab:   _activeTab,
-                  tabs:        tabs,
-                  onTabChange: (tab) => setState(() => _activeTab = tab),
-                  theme:       theme,
-                  ambient:     ambient,
-                ),
-                VerticalDivider(
-                  width: 1, thickness: 1,
-                  color: Colors.white.withAlpha(0x0F),
-                ),
-                Expanded(child: _body(theme)),
-              ],
+            SafeArea(
+              child: Row(
+                children: [
+                  _LandscapeRail(
+                    activeTab:   _activeTab,
+                    tabs:        tabs,
+                    onTabChange: (tab) => setState(() => _activeTab = tab),
+                    theme:       theme,
+                    ambient:     ambient,
+                  ),
+                  VerticalDivider(
+                    width: 1, thickness: 1,
+                    color: Colors.white.withAlpha(0x0F),
+                  ),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (ctx, constraints) {
+                        // Override MediaQuery width so every child screen
+                        // sees the actual content column width, not the full
+                        // landscape screen width. Fixes oversized art / cards.
+                        final mq = MediaQuery.of(ctx);
+                        return MediaQuery(
+                          data: mq.copyWith(
+                            size: Size(constraints.maxWidth, mq.size.height),
+                          ),
+                          child: _body(theme),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
             Positioned(
               left: _kLandscapeRailWidth, right: 0, bottom: 0,

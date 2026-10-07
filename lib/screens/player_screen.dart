@@ -37,6 +37,86 @@ const _kArtistSvg = '''
   <path d="M4 20c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke="#000000" stroke-width="1.5" stroke-linecap="round"/>
 </svg>''';
 
+// ── Shared options sheet (portrait + landscape) ─────────────────────────────
+void _showTrackOptions(
+  BuildContext context,
+  WidgetRef ref,
+  MediaItem item,
+  VibeTheme theme,
+) {
+  final albumId  = item.extras?['albumId']  as String?;
+  final artistId = item.extras?['artistId'] as String?;
+  final router   = GoRouter.of(context);
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    useRootNavigator: false,
+    builder: (sheetCtx) => Container(
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(0x44),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          if (albumId != null)
+            ListTile(
+              leading: SvgPicture.string(
+                _kAlbumSvg,
+                width: 24, height: 24,
+                colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+              ),
+              title: Text('Go to Album', style: TextStyle(color: theme.textColor)),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                ref.read(playerOpenProvider.notifier).state = false;
+                router.go(
+                  '/album/$albumId'
+                  '?name=${Uri.encodeComponent(item.album ?? '')}'
+                  '&artist=${Uri.encodeComponent(item.artist ?? '')}',
+                );
+              },
+            ),
+          if (item.artist != null && item.artist!.isNotEmpty)
+            ListTile(
+              leading: SvgPicture.string(
+                _kArtistSvg,
+                width: 24, height: 24,
+                colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+              ),
+              title: Text('Go to Artist', style: TextStyle(color: theme.textColor)),
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                ref.read(playerOpenProvider.notifier).state = false;
+                final albumArtist = item.extras?['albumArtist'] as String?
+                    ?? item.artist?.split(' & ').first
+                    ?? '';
+                String? id = artistId ?? await JellyfinApi.getArtistIdByName(albumArtist);
+                if (id != null) {
+                  router.go(
+                    '/artist/$id'
+                    '?name=${Uri.encodeComponent(albumArtist)}',
+                  );
+                }
+              },
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+}
+
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key});
 
@@ -196,6 +276,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  void _onLandscapeDragUpdate(DragUpdateDetails d) {
+    final dy = d.delta.dy;
+    if (dy > 0 || _dragOffset > 0) {
+      setState(() => _dragOffset = (_dragOffset + dy).clamp(0.0, double.infinity));
+    }
+  }
+
+  void _onLandscapeDragEnd(DragEndDetails d) {
+    final velocity = d.primaryVelocity ?? 0;
+    final screenH  = MediaQuery.of(context).size.height;
+    if (velocity > 500 || _dragOffset > screenH * 0.28) {
+      _animateDismiss();
+    } else {
+      _snapAnim = Tween<double>(begin: _dragOffset, end: 0)
+          .animate(CurvedAnimation(parent: _snapCtrl, curve: Curves.easeOut));
+      _snapAnim!.addListener(() {
+        if (mounted) setState(() => _dragOffset = _snapAnim!.value);
+      });
+      _snapCtrl.forward(from: 0).then((_) {
+        if (mounted) setState(() => _dragOffset = 0);
+      });
+    }
+  }
+
   void _onCompactHeaderDragUpdate(DragUpdateDetails d) {
     if (d.delta.dy > 0) {
       final screenH = MediaQuery.of(context).size.height;
@@ -227,7 +331,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           if (item == null) {
             return const Scaffold(backgroundColor: Colors.black, body: SizedBox.expand());
           }
-          return _LandscapePlayerBody(handler: handler, item: item, theme: theme, ambient: ambient);
+          final screenH    = MediaQuery.of(context).size.height;
+          final revealT    = (_dragOffset / screenH).clamp(0.0, 1.0);
+          final barrierAlpha = ((1.0 - revealT) * 0x99).round();
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ColoredBox(color: Colors.black.withAlpha(barrierAlpha)),
+                ),
+              ),
+              Transform.translate(
+                offset: Offset(0, _dragOffset),
+                child: _LandscapePlayerBody(
+                  handler:             handler,
+                  item:                item,
+                  theme:               theme,
+                  ambient:             ambient,
+                  onDismissDragUpdate: _onLandscapeDragUpdate,
+                  onDismissDragEnd:    _onLandscapeDragEnd,
+                ),
+              ),
+            ],
+          );
         },
       );
     }
@@ -581,82 +707,8 @@ class _ContentState extends ConsumerState<_Content> {
     _lastHapticSlot    = null;
   }
 
-  void _showOptions(BuildContext context) {
-    final item     = widget.item;
-    final albumId  = item.extras?['albumId']  as String?;
-    final artistId = item.extras?['artistId'] as String?;
-    final router   = GoRouter.of(context);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      useRootNavigator: false,
-      builder: (sheetCtx) => Container(
-        decoration: BoxDecoration(
-          color: widget.theme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withAlpha(0x44),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            if (albumId != null)
-              ListTile(
-                leading: SvgPicture.string(
-                  _kAlbumSvg,
-                  width: 24, height: 24,
-                  colorFilter: ColorFilter.mode(widget.theme.accentBright, BlendMode.srcIn),
-                ),
-                title: Text('Go to Album',
-                    style: TextStyle(color: widget.theme.textColor)),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  ref.read(playerOpenProvider.notifier).state = false;
-                  router.go(
-                    '/album/$albumId'
-                    '?name=${Uri.encodeComponent(item.album ?? '')}'
-                    '&artist=${Uri.encodeComponent(item.artist ?? '')}',
-                  );
-                },
-              ),
-            if (item.artist != null && item.artist!.isNotEmpty)
-              ListTile(
-                leading: SvgPicture.string(
-                  _kArtistSvg,
-                  width: 24, height: 24,
-                  colorFilter: ColorFilter.mode(widget.theme.accentBright, BlendMode.srcIn),
-                ),
-                title: Text('Go to Artist',
-                    style: TextStyle(color: widget.theme.textColor)),
-                onTap: () async {
-                  Navigator.pop(sheetCtx);
-                  ref.read(playerOpenProvider.notifier).state = false;
-                  final albumArtist = item.extras?['albumArtist'] as String?
-                      ?? item.artist?.split(' & ').first
-                      ?? '';
-                  String? id = artistId ?? await JellyfinApi.getArtistIdByName(albumArtist);
-                  if (id != null) {
-                    router.go(
-                      '/artist/$id'
-                      '?name=${Uri.encodeComponent(albumArtist)}',
-                    );
-                  }
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
+  void _showOptions(BuildContext ctx) =>
+      _showTrackOptions(ctx, ref, widget.item, widget.theme);
 
   static String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -2029,16 +2081,20 @@ class _WaveformPainter extends CustomPainter {
 
 /// Root landscape player body — ambient tween + layout scaffold.
 class _LandscapePlayerBody extends ConsumerStatefulWidget {
-  final VibeAudioHandler handler;
-  final MediaItem        item;
-  final VibeTheme        theme;
-  final AmbientTheme     ambient;
+  final VibeAudioHandler          handler;
+  final MediaItem                 item;
+  final VibeTheme                 theme;
+  final AmbientTheme              ambient;
+  final GestureDragUpdateCallback onDismissDragUpdate;
+  final GestureDragEndCallback    onDismissDragEnd;
 
   const _LandscapePlayerBody({
     required this.handler,
     required this.item,
     required this.theme,
     required this.ambient,
+    required this.onDismissDragUpdate,
+    required this.onDismissDragEnd,
   });
 
   @override
@@ -2079,61 +2135,76 @@ class _LandscapePlayerBodyState extends ConsumerState<_LandscapePlayerBody> {
                 child: Row(
                   children: [
                     // ── Art panel ──────────────────────────────────────────
-                    SizedBox(
-                      width: 300,
-                      child: Stack(
-                        children: [
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: AspectRatio(
-                                aspectRatio: 1,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(18),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: animAmbient.glowColor.withAlpha(0x88),
-                                        blurRadius: 40,
-                                        spreadRadius: -4,
-                                      ),
-                                      const BoxShadow(
-                                        color: Colors.black54,
-                                        blurRadius: 24,
-                                        offset: Offset(0, 12),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(18),
-                                    child: artUrl != null
-                                        ? CachedNetworkImage(
-                                            imageUrl: artUrl,
-                                            fit: BoxFit.cover,
-                                          )
-                                        : Container(
-                                            color: animAmbient.glowColor.withAlpha(0x33),
-                                            child: const Icon(
-                                              Icons.music_note_rounded,
-                                              color: Colors.white38,
-                                              size: 48,
+                    GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onVerticalDragUpdate: widget.onDismissDragUpdate,
+                      onVerticalDragEnd:    widget.onDismissDragEnd,
+                      child: SizedBox(
+                        width: 300,
+                        child: Stack(
+                          children: [
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(20),
+                                child: AspectRatio(
+                                  aspectRatio: 1,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(18),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: animAmbient.glowColor.withAlpha(0x88),
+                                          blurRadius: 40,
+                                          spreadRadius: -4,
+                                        ),
+                                        const BoxShadow(
+                                          color: Colors.black54,
+                                          blurRadius: 24,
+                                          offset: Offset(0, 12),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(18),
+                                      child: artUrl != null
+                                          ? CachedNetworkImage(
+                                              imageUrl: artUrl,
+                                              fit: BoxFit.cover,
+                                            )
+                                          : Container(
+                                              color: animAmbient.glowColor.withAlpha(0x33),
+                                              child: const Icon(
+                                                Icons.music_note_rounded,
+                                                color: Colors.white38,
+                                                size: 48,
+                                              ),
                                             ),
-                                          ),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          // Back button
-                          Positioned(
-                            top: 4, left: 4,
-                            child: IconButton(
-                              icon: Icon(Icons.keyboard_arrow_down_rounded,
-                                  color: Colors.white.withAlpha(0xBB), size: 28),
-                              onPressed: () => Navigator.maybePop(context),
+                            // Back button (bottom-left of player)
+                            Positioned(
+                              top: 4, left: 4,
+                              child: IconButton(
+                                icon: Icon(Icons.keyboard_arrow_down_rounded,
+                                    color: Colors.white.withAlpha(0xBB), size: 28),
+                                onPressed: () => Navigator.maybePop(context),
+                              ),
                             ),
-                          ),
-                        ],
+                            // Three-dots options (top-right)
+                            Positioned(
+                              top: 4, right: 4,
+                              child: IconButton(
+                                icon: Icon(Icons.more_horiz,
+                                    color: Colors.white.withAlpha(0xBB), size: 24),
+                                onPressed: () => _showTrackOptions(
+                                    context, ref, widget.item, widget.theme),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
 

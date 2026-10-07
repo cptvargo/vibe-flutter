@@ -821,7 +821,8 @@ class _OnDeckGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final w     = MediaQuery.of(context).size.width;
     // 20px side padding × 2 = 40, two 8px column gaps = 16 → total 56
-    final cardW = (w - 56) / 3;
+    // Cap at 150 so cards don't balloon in landscape.
+    final cardW = ((w - 56) / 3).clamp(0.0, 150.0);
     final itemH = cardW + 46; // square art + 46px for two lines of text
     final gridH = itemH * 3 + 8 * 2; // 3 rows + 2 row-gaps
     // Always 3 pages so dots and swiping are always available.
