@@ -24,9 +24,16 @@ import 'providers.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Load prefs early so we can restore orientation before the first frame.
+  final prefs = await SharedPreferences.getInstance();
+
   if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
-    // Portrait only — music apps don't need landscape (mobile only)
-    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    final isLandscape = prefs.getBool('vibe_landscape_v1') ?? false;
+    await SystemChrome.setPreferredOrientations(
+      isLandscape
+          ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+          : [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown],
+    );
 
     // Draw edge-to-edge (content behind status bar / nav bar)
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -81,7 +88,6 @@ Future<void> main() async {
   if (lastPlayed != null) handler.mediaItem.add(lastPlayed);
 
   // Restore shuffle preference saved before last process kill (car stop, OOM).
-  final prefs = await SharedPreferences.getInstance();
   if (prefs.getBool('vibe_shuffle_v1') == true) {
     await handler.setShuffleMode(AudioServiceShuffleMode.all);
   }
