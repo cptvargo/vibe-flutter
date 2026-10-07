@@ -18,7 +18,7 @@ import '../theme/vibe_theme.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 
 const _kTopBarH        = 56.0;   // drag handle + options row
-const _kControlsPanelH = 268.0;
+const _kControlsPanelH = 320.0;
 const _kQueueHintH     = 48.0;   // "ViBE Queue" pull-up strip below controls
 const _kCompactHeaderH  = 80.0;
 const _kArtCompact      = 56.0;
@@ -136,14 +136,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
+    // Already snapping to open — let the animation finish undisturbed.
+    if (_expansion.isAnimating) return;
+
     final dy = d.delta.dy;
     final screenH = MediaQuery.of(context).size.height;
+
+    void _snapIfNearOpen() {
+      if (_expansion.value >= 0.85) {
+        _expansion.animateTo(1.0,
+            curve: Curves.easeOut,
+            duration: const Duration(milliseconds: 150));
+      }
+    }
+
     if (_expansion.value > 0) {
       _expansion.value = (_expansion.value - dy / (screenH * 0.45)).clamp(0.0, 1.0);
+      _snapIfNearOpen();
       return;
     }
     if (dy < 0 && _dragOffset == 0) {
       _expansion.value = (-dy / (screenH * 0.45)).clamp(0.0, 1.0);
+      _snapIfNearOpen();
       return;
     }
     if (dy > 0 || _dragOffset > 0) {
@@ -290,7 +304,17 @@ class _Body extends StatelessWidget {
           return Stack(
             fit: StackFit.expand,
             children: [
-              _AmbientBackground(ambient: animAmbient, artUrl: artUrl),
+              StreamBuilder<PlaybackState>(
+                stream: handler.playbackState,
+                builder: (context, snap) {
+                  final playing = snap.data?.playing ?? false;
+                  return _AmbientBackground(
+                    ambient:   animAmbient,
+                    artUrl:    artUrl,
+                    isPlaying: playing,
+                  );
+                },
+              ),
               SafeArea(
                 child: _Content(
                   handler:                   handler,
@@ -324,8 +348,13 @@ class _AmbientTween extends Tween<AmbientTheme> {
 class _AmbientBackground extends StatefulWidget {
   final AmbientTheme ambient;
   final String?      artUrl;
+  final bool         isPlaying;
 
-  const _AmbientBackground({required this.ambient, required this.artUrl});
+  const _AmbientBackground({
+    required this.ambient,
+    required this.artUrl,
+    required this.isPlaying,
+  });
 
   @override
   State<_AmbientBackground> createState() => _AmbientBackgroundState();
@@ -341,7 +370,19 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
     _breathCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 10),
-    )..repeat(reverse: true);
+    );
+    if (widget.isPlaying) _breathCtrl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_AmbientBackground old) {
+    super.didUpdateWidget(old);
+    if (widget.isPlaying == old.isPlaying) return;
+    if (widget.isPlaying) {
+      _breathCtrl.repeat(reverse: true);
+    } else {
+      _breathCtrl.stop();
+    }
   }
 
   @override
@@ -357,19 +398,22 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
       builder: (context, _) {
         final t    = _breathCtrl.value;
         final glow = widget.ambient.glowColor;
+        final gs   = widget.ambient.glowScale; // 0.0 = pure black, 1.0 = full glow
 
-        final coreCenter = (255 * (0.75 + 0.25 * t)).round();
-        final coreMid    = (105 * (0.65 + 0.35 * t)).round();
-        final haloCenter = (80  * (0.70 + 0.30 * t)).round();
+        final coreCenter = (255 * gs * (0.75 + 0.25 * t)).round();
+        final coreMid    = (105 * gs * (0.65 + 0.35 * t)).round();
+        final haloCenter = (80  * gs * (0.70 + 0.30 * t)).round();
 
         return Stack(
           fit: StackFit.expand,
           children: [
             const ColoredBox(color: Colors.black),
 
-            if (widget.artUrl != null)
+            // Blurred artwork tint — suppressed for dark albums; white silhouette
+            // art bleeds gray even at low opacity when glowScale is 0.
+            if (gs > 0.05 && widget.artUrl != null)
               Opacity(
-                opacity: 0.12,
+                opacity: 0.12 * gs,
                 child: CachedNetworkImage(
                   imageUrl: widget.artUrl!,
                   fit: BoxFit.cover,
@@ -419,7 +463,7 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
                 gradient: RadialGradient(
                   center: const Alignment(0.0, -0.02),
                   radius: 1.60,
-                  colors: [glow.withAlpha(0x28), glow.withAlpha(0)],
+                  colors: [glow.withAlpha((0x28 * gs).round()), glow.withAlpha(0)],
                 ),
               ),
             ),
@@ -447,7 +491,7 @@ class _AmbientBackgroundState extends State<_AmbientBackground>
                 gradient: RadialGradient(
                   center: const Alignment(0.0, 1.8),
                   radius: 1.4,
-                  colors: [glow.withAlpha(0x99), glow.withAlpha(0)],
+                  colors: [glow.withAlpha((0x99 * gs).round()), glow.withAlpha(0)],
                 ),
               ),
             ),
@@ -550,22 +594,6 @@ class _ContentState extends ConsumerState<_Content> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            ListTile(
-              leading: Icon(Icons.playlist_add_rounded,
-                  color: widget.theme.accentBright, size: 26),
-              title: Text('Add to Playlist',
-                  style: TextStyle(color: widget.theme.textColor)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                showModalBottomSheet<void>(
-                  context:            context,
-                  isScrollControlled: true,
-                  backgroundColor:    Colors.transparent,
-                  builder: (_) => AddToPlaylistSheet(
-                      trackId: item.id, theme: widget.theme),
-                );
-              },
-            ),
             if (albumId != null)
               ListTile(
                 leading: SvgPicture.string(
@@ -654,12 +682,8 @@ class _ContentState extends ConsumerState<_Content> {
     final handler = widget.handler;
     final ambient = widget.ambient;
 
-    return Container(
-      decoration: const BoxDecoration(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        color: Color(0x1A000000),
-      ),
-      padding: const EdgeInsets.fromLTRB(28, 20, 28, 12),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
       child: StreamBuilder<PlaybackState>(
         stream: handler.playbackState,
         builder: (context, statSnap) {
@@ -674,38 +698,44 @@ class _ContentState extends ConsumerState<_Content> {
                   : 0.0;
 
               return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
                     children: [
+                      // Spacer balances the fire button so title/artist are centered
+                      const SizedBox(width: 48),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Text(
                               item.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.2,
                                 shadows: [
                                   Shadow(
-                                    color: ambient.playButtonColor.withAlpha(0x55),
-                                    blurRadius: 16,
+                                    color: ambient.playButtonColor.withAlpha(0x44),
+                                    blurRadius: 12,
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 3),
                             Text(
                               item.artist ?? '',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
                               style: TextStyle(
-                                color: ambient.waveformActive,
-                                fontSize: 15,
+                                color: ambient.waveformActive.withAlpha(0xCC),
+                                fontSize: 13,
+                                letterSpacing: 0.1,
                               ),
                             ),
                           ],
@@ -743,7 +773,7 @@ class _ContentState extends ConsumerState<_Content> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
 
                   _WaveformSeekBar(
                     progress:      progress,
@@ -774,6 +804,39 @@ class _ContentState extends ConsumerState<_Content> {
                   ),
                   const SizedBox(height: 20),
 
+                  // Primary transport: prev | play | next
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _PlainIconButton(
+                        icon: Icons.skip_previous_rounded,
+                        iconSize: 30,
+                        inactiveColor: Colors.white,
+                        activeColor: ambient.waveformActive,
+                        onTap: handler.skipToPrevious,
+                      ),
+                      const SizedBox(width: 28),
+                      _GlassTransportButton(
+                        icon: Icons.play_arrow_rounded,
+                        size: 72, iconSize: 34,
+                        intensity: 1.0,
+                        palette: palette,
+                        customIcon: isPlaying ? const _ThinPauseIcon(height: 20) : null,
+                        onTap: () => isPlaying ? handler.pause() : handler.play(),
+                      ),
+                      const SizedBox(width: 28),
+                      _PlainIconButton(
+                        icon: Icons.skip_next_rounded,
+                        iconSize: 30,
+                        inactiveColor: Colors.white,
+                        activeColor: ambient.waveformActive,
+                        onTap: handler.skipToNext,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Secondary row: shuffle | add-to-playlist | repeat
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -796,26 +859,19 @@ class _ContentState extends ConsumerState<_Content> {
                         },
                       ),
                       _PlainIconButton(
-                        icon: Icons.skip_previous_rounded,
-                        iconSize: 30,
+                        icon: Icons.playlist_add_rounded,
+                        iconSize: 24,
                         inactiveColor: Colors.white,
                         activeColor: ambient.waveformActive,
-                        onTap: handler.skipToPrevious,
-                      ),
-                      _GlassTransportButton(
-                        icon: Icons.play_arrow_rounded,
-                        size: 72, iconSize: 34,
-                        intensity: 1.0,
-                        palette: palette,
-                        customIcon: isPlaying ? const _ThinPauseIcon(height: 20) : null,
-                        onTap: () => isPlaying ? handler.pause() : handler.play(),
-                      ),
-                      _PlainIconButton(
-                        icon: Icons.skip_next_rounded,
-                        iconSize: 30,
-                        inactiveColor: Colors.white,
-                        activeColor: ambient.waveformActive,
-                        onTap: handler.skipToNext,
+                        onTap: () => showModalBottomSheet<void>(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => AddToPlaylistSheet(
+                            trackId: item.id,
+                            theme: widget.theme,
+                          ),
+                        ),
                       ),
                       StreamBuilder<LoopMode>(
                         stream: handler.loopModeStream,
@@ -839,7 +895,7 @@ class _ContentState extends ConsumerState<_Content> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                 ],
               );
             },

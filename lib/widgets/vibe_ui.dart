@@ -87,7 +87,8 @@ class _AIBadgeState extends State<_AIBadge>
 class VibeBounce extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
-  const VibeBounce({super.key, required this.child, this.onTap});
+  final VoidCallback? onLongPress;
+  const VibeBounce({super.key, required this.child, this.onTap, this.onLongPress});
   @override State<VibeBounce> createState() => _VibeBounceState();
 }
 
@@ -99,6 +100,7 @@ class _VibeBounceState extends State<VibeBounce> {
     onTapDown:   (_) => setState(() => _scale = 0.93),
     onTapUp:     (_) { setState(() => _scale = 1.0); widget.onTap?.call(); },
     onTapCancel: ()  => setState(() => _scale = 1.0),
+    onLongPress: widget.onLongPress,
     child: AnimatedScale(
       scale:    _scale,
       duration: const Duration(milliseconds: 110),

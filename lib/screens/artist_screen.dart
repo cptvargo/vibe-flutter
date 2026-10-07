@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
+import '../services/download_service.dart';
 import '../theme/palette_service.dart';
 import '../widgets/mini_player.dart';
 
@@ -23,7 +24,8 @@ class ArtistScreen extends ConsumerStatefulWidget {
 }
 
 class _ArtistScreenState extends ConsumerState<ArtistScreen> {
-  List<Map<String, dynamic>> _albums = [];
+  List<Map<String, dynamic>> _albums    = [];
+  List<VibeTrack>            _allTracks = [];
   bool _loadingPlay = false;
   VibePalette? _palette;
   // Resolved canonical ID — navigation from albums/player can pass sub-entity
@@ -39,38 +41,87 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   }
 
   Future<void> _loadData() async {
-    if (widget.artistName.isNotEmpty) {
-      final resolved = await JellyfinApi.getArtistIdByName(widget.artistName);
-      if (resolved != null && mounted) setState(() => _artistId = resolved);
-      _artistId = resolved ?? widget.artistId;
-    }
+    final isAI = ref.read(isAIProvider);
+
+    // Resolve canonical ID and fetch data in parallel — don't serialize.
     await Future.wait([
+      // ID resolution: only needed for collab artists (comma/ampersand in name).
+      // Regular artists always have the correct ID from navigation params.
+      if (widget.artistName.contains(',') || widget.artistName.contains('&'))
+        JellyfinApi.getArtistIdByName(widget.artistName).then((resolved) {
+          if (resolved != null && resolved != _artistId && mounted) {
+            setState(() => _artistId = resolved);
+            _fetchAlbumsAndTracks(resolved, isAI);
+          }
+        }).catchError((_) {}),
+
       JellyfinApi.getArtistAlbums(_artistId).then((r) {
         if (mounted) {
           setState(() => _albums =
               ((r['Items'] as List?) ?? []).cast<Map<String, dynamic>>());
         }
       }).catchError((_) {}),
+
+      JellyfinApi.getArtistAllTracks(_artistId).then((r) {
+        if (mounted) {
+          setState(() => _allTracks = ((r['Items'] as List?) ?? [])
+              .cast<Map<String, dynamic>>()
+              .map((j) => VibeTrack.fromJellyfin(j, isAI: isAI))
+              .toList());
+        }
+      }).catchError((_) {}),
+
       PaletteService.extractFromUrl(
         JellyfinApi.colorExtractionUrl(_artistId),
         _artistId,
       ).then((p) {
         if (p != null && mounted) setState(() => _palette = p);
-      }),
+      }).catchError((_) {}),
+    ]);
+  }
+
+  Future<void> _fetchAlbumsAndTracks(String id, bool isAI) async {
+    await Future.wait([
+      JellyfinApi.getArtistAlbums(id).then((r) {
+        if (mounted) {
+          setState(() => _albums =
+              ((r['Items'] as List?) ?? []).cast<Map<String, dynamic>>());
+        }
+      }).catchError((_) {}),
+      JellyfinApi.getArtistAllTracks(id).then((r) {
+        if (mounted) {
+          setState(() => _allTracks = ((r['Items'] as List?) ?? [])
+              .cast<Map<String, dynamic>>()
+              .map((j) => VibeTrack.fromJellyfin(j, isAI: isAI))
+              .toList());
+        }
+      }).catchError((_) {}),
+      PaletteService.extractFromUrl(
+        JellyfinApi.colorExtractionUrl(id), id,
+      ).then((p) {
+        if (p != null && mounted) setState(() => _palette = p);
+      }).catchError((_) {}),
     ]);
   }
 
   Future<void> _playAll({bool shuffle = false}) async {
     if (_loadingPlay || !mounted) return;
-    final isAI = ref.read(isAIProvider);
     ref.read(playerOpenProvider.notifier).state = true;
     context.push('/player');
     setState(() => _loadingPlay = true);
     try {
-      final res = await JellyfinApi.getArtistAllTracks(_artistId);
-      final items = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
-      if (items.isEmpty) return;
-      final tracks = items.map((j) => VibeTrack.fromJellyfin(j, isAI: isAI)).toList();
+      List<VibeTrack> tracks;
+      if (_allTracks.isNotEmpty) {
+        tracks = List.of(_allTracks);
+      } else {
+        final isAI = ref.read(isAIProvider);
+        final res  = await JellyfinApi.getArtistAllTracks(_artistId);
+        tracks = ((res['Items'] as List?) ?? [])
+            .cast<Map<String, dynamic>>()
+            .map((j) => VibeTrack.fromJellyfin(j, isAI: isAI))
+            .toList();
+      }
+      if (tracks.isEmpty) return;
       if (shuffle) tracks.shuffle();
       ref.read(audioHandlerProvider).playTracks(tracks, startIndex: 0, playbackContext: 'shuffle');
     } catch (e) {
@@ -80,9 +131,18 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     }
   }
 
+  void _downloadDiscography() {
+    if (_allTracks.isEmpty) return;
+    final toDownload = _allTracks
+        .where((t) =>
+            !DownloadService.isDownloaded(t.id) &&
+            !DownloadService.isDownloading(t.id))
+        .toList();
+    if (toDownload.isNotEmpty) DownloadService.downloadTracks(toDownload);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme   = ref.watch(themeProvider);
     final palette = _palette ?? VibePalette.fallback;
 
     // Gradient: artist palette color bleeds from top, fades to near-black by 70%
@@ -115,7 +175,8 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                 SliverToBoxAdapter(
                   child: Column(
                     children: [
-                      // Hero image — full bleed from screen top
+                      // Small gap so hero clears the status bar visually
+                      const SizedBox(height: 52),
                       _ArtistHero(
                         artistId:   _artistId,
                         artistName: widget.artistName,
@@ -227,6 +288,75 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 10),
+                            // Download discography button
+                            StreamBuilder<void>(
+                              stream: DownloadService.onChange,
+                              builder: (context, _) {
+                                if (_allTracks.isEmpty) {
+                                  return const SizedBox(width: 48, height: 48);
+                                }
+                                final allDone = _allTracks.every(
+                                    (t) => DownloadService.isDownloaded(t.id));
+                                final anyActive = _allTracks.any(
+                                    (t) => DownloadService.isDownloading(t.id));
+
+                                if (allDone) {
+                                  return Container(
+                                    width: 48, height: 48,
+                                    decoration: BoxDecoration(
+                                      color: palette.vibrant.withAlpha(0x22),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                          color: palette.vibrant.withAlpha(0x55)),
+                                    ),
+                                    child: Icon(Icons.download_done_rounded,
+                                        color: palette.vibrant, size: 22),
+                                  );
+                                }
+
+                                if (anyActive) {
+                                  final active = _allTracks.where(
+                                      (t) => DownloadService.isDownloading(t.id));
+                                  final avg = active.fold(0.0,
+                                          (s, t) => s + DownloadService.progress(t.id)) /
+                                      active.length;
+                                  return Container(
+                                    width: 48, height: 48,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(0x14),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(13),
+                                      child: CircularProgressIndicator(
+                                        value: avg,
+                                        strokeWidth: 2.5,
+                                        color: Colors.white.withAlpha(0xBB),
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                return GestureDetector(
+                                  onTap: _downloadDiscography,
+                                  child: Container(
+                                    width: 48, height: 48,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(0x14),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                          color: Colors.white.withAlpha(0x20)),
+                                    ),
+                                    child: Icon(
+                                      Icons.download_for_offline_outlined,
+                                      color: Colors.white.withAlpha(0xBB),
+                                      size: 22,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -334,17 +464,16 @@ class _ArtistHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        CachedNetworkImage(
-          imageUrl: JellyfinApi.imageUrl(artistId, size: 800),
+        SizedBox(
+          height: 300,
           width: double.infinity,
-          fit: BoxFit.fitWidth,
-          placeholder: (_, _) => const SizedBox(
-            height: 300,
-            child: ColoredBox(color: Color(0xFF0D0D1A)),
-          ),
-          errorWidget: (_, _, _) => SizedBox(
-            height: 300,
-            child: ColoredBox(
+          child: CachedNetworkImage(
+            imageUrl: JellyfinApi.imageUrl(artistId, size: 320),
+            fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
+            placeholder: (_, _) =>
+                const ColoredBox(color: Color(0xFF0D0D1A)),
+            errorWidget: (_, _, _) => ColoredBox(
               color: const Color(0xFF0D0D1A),
               child: Center(
                 child: Text(
