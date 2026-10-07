@@ -321,7 +321,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final handler     = ref.read(audioHandlerProvider);
     final theme       = ref.watch(playerThemeProvider);
     final ambient     = ref.watch(ambientThemeProvider);
-    final isLandscape = ref.watch(landscapeModeProvider);
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
 
     if (isLandscape) {
       return StreamBuilder<MediaItem?>(

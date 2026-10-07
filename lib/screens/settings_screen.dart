@@ -100,21 +100,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 16),
                 _Section(
                   theme: theme,
-                  title: 'Display',
-                  children: [
-                    _SwitchTile(
-                      theme: theme,
-                      icon: Icons.screen_rotation_alt_outlined,
-                      label: 'Landscape Mode',
-                      subtitle: 'Locks the app to horizontal view',
-                      value: ref.watch(landscapeModeProvider),
-                      onChanged: (_) => ref.read(landscapeModeProvider.notifier).toggle(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _Section(
-                  theme: theme,
                   title: 'Community',
                   children: [
                     _ActionTile(
@@ -555,60 +540,6 @@ class _ActionTile extends StatelessWidget {
 
 // ── Switch tile ───────────────────────────────────────────────────────────────
 
-class _SwitchTile extends StatelessWidget {
-  const _SwitchTile({
-    required this.theme,
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-  final VibeTheme theme;
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: theme.accentBright.withAlpha(0xAA)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                    style: TextStyle(fontSize: 14, color: theme.textColor,
-                      fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 2),
-                  Text(subtitle,
-                    style: TextStyle(fontSize: 11, color: theme.textFaint)),
-                ],
-              ),
-            ),
-            Switch(
-              value: value,
-              onChanged: onChanged,
-              activeThumbColor: theme.accentBright,
-              activeTrackColor: theme.accentBright.withAlpha(0x66),
-              trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ── Edit name tile ────────────────────────────────────────────────────────────
 

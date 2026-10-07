@@ -28,12 +28,13 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
 
   if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
-    final isLandscape = prefs.getBool('vibe_landscape_v1') ?? false;
-    await SystemChrome.setPreferredOrientations(
-      isLandscape
-          ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
-          : [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown],
-    );
+    // Allow free rotation — landscape/portrait layout adapts automatically.
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
 
     // Draw edge-to-edge (content behind status bar / nav bar)
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

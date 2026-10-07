@@ -10,7 +10,6 @@ import 'theme/vibe_theme.dart';
 
 export 'services/artist_mix_service.dart' show ArtistMixEntry;
 export 'providers/dj_mode_notifier.dart' show DjModeNotifier, djModeProvider;
-export 'providers/landscape_mode_notifier.dart' show LandscapeModeNotifier, landscapeModeProvider;
 
 // Audio handler — initialized in main.dart and overridden in ProviderScope
 final audioHandlerProvider = Provider<VibeAudioHandler>(

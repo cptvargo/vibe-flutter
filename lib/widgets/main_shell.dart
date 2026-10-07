@@ -123,7 +123,7 @@ class _MainShellState extends ConsumerState<MainShell> {
         }
       },
     );
-    final isLandscape = ref.watch(landscapeModeProvider);
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final width       = MediaQuery.sizeOf(context).width;
 
     final ambientGlow = Positioned.fill(
