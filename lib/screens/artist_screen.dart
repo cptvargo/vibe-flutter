@@ -465,7 +465,7 @@ class _ArtistHero extends StatelessWidget {
     return Stack(
       children: [
         SizedBox(
-          height: 300,
+          height: MediaQuery.of(context).orientation == Orientation.landscape ? 180 : 300,
           width: double.infinity,
           child: CachedNetworkImage(
             imageUrl: JellyfinApi.imageUrl(artistId, size: 320),

@@ -162,6 +162,10 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     const hPad   = 16.0;
     final artSize = screenW - hPad * 2;
 
+    if (MediaQuery.of(context).orientation == Orientation.landscape) {
+      return _buildLandscapeLayout(context, theme, artUrl);
+    }
+
     return Scaffold(
       backgroundColor: theme.background,
       body: Stack(
@@ -386,132 +390,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                   ),
                 ),
 
-                // ── Track list ─────────────────────────────────────────────
-                if (_loading)
-                  const SliverFillRemaining(
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else ...[
-                  StreamBuilder<PlaybackState>(
-                    stream: ref.read(audioHandlerProvider).playbackState,
-                    builder: (context, pbSnap) {
-                      final isPlaying = pbSnap.data?.playing ?? false;
-                      return StreamBuilder<MediaItem?>(
-                    stream: ref.read(audioHandlerProvider).mediaItem,
-                    builder: (context, snap) {
-                      final currentId = snap.data?.id;
-                      return SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, i) {
-                            final track     = _tracks[i];
-                            final isCurrent = track.id == currentId;
-                            return GestureDetector(
-                              onTap: () => _play(i),
-                              behavior: HitTestBehavior.opaque,
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                    hPad, 0, hPad, 0),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 11),
-                                  child: Row(
-                                    children: [
-                                      // Track number or now-playing equalizer
-                                      SizedBox(
-                                        width: 24,
-                                        child: isCurrent
-                                            ? Center(
-                                                child: _NowPlayingBars(
-                                                  color: theme.accent,
-                                                  isPlaying: isPlaying,
-                                                ),
-                                              )
-                                            : Text(
-                                                '${i + 1}',
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                    color: theme.textFaint,
-                                                    fontSize: 13),
-                                              ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      // Title + featured artist
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              track.title,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: isCurrent
-                                                    ? theme.accentBright
-                                                    : theme.textColor,
-                                                fontSize: 14,
-                                                fontWeight: isCurrent
-                                                    ? FontWeight.w700
-                                                    : FontWeight.w600,
-                                              ),
-                                            ),
-                                            if (track.artist.isNotEmpty &&
-                                                track.artist != widget.artistName)
-                                              Text(
-                                                track.artist,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                    color: theme.textDim,
-                                                    fontSize: 12),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      // Duration
-                                      Text(
-                                        _fmt(track.duration),
-                                        style: TextStyle(
-                                            color: theme.textFaint, fontSize: 12),
-                                      ),
-                                      // Three-dots
-                                      GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onTap: () => _showTrackMenu(
-                                            context, track, theme),
-                                        child: Padding(
-                                          padding: const EdgeInsets.fromLTRB(
-                                              10, 10, 0, 10),
-                                          child: Icon(
-                                            Icons.more_vert_rounded,
-                                            color: theme.textFaint,
-                                            size:  18,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                          childCount: _tracks.length,
-                        ),
-                      );
-                    },
-                  );
-                    },
-                  ),
-                  // ── You might also like ──────────────────────────────────
-                  if (_similarArtists.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: _YouMightAlsoLike(
-                        artists: _similarArtists,
-                        theme:   theme,
-                      ),
-                    ),
-
-                  const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
-                ],
+                ..._buildTrackSlivers(context, theme),
               ],
             ),
           ), // SafeArea
@@ -542,6 +421,243 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
           ),
 
           // MiniPlayer
+          const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
+        ],
+      ),
+    );
+  }
+
+  // ── Extracted track slivers — shared by portrait + landscape ──────────────
+  List<Widget> _buildTrackSlivers(BuildContext context, VibeTheme theme) {
+    const pad = 16.0;
+    if (_loading) {
+      return [const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))];
+    }
+    return [
+      StreamBuilder<PlaybackState>(
+        stream: ref.read(audioHandlerProvider).playbackState,
+        builder: (context, pbSnap) {
+          final isPlaying = pbSnap.data?.playing ?? false;
+          return StreamBuilder<MediaItem?>(
+            stream: ref.read(audioHandlerProvider).mediaItem,
+            builder: (context, snap) {
+              final currentId = snap.data?.id;
+              return SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final track     = _tracks[i];
+                    final isCurrent = track.id == currentId;
+                    return GestureDetector(
+                      onTap: () => _play(i),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(pad, 0, pad, 0),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 24,
+                                child: isCurrent
+                                    ? Center(child: _NowPlayingBars(color: theme.accent, isPlaying: isPlaying))
+                                    : Text('${i + 1}', textAlign: TextAlign.center,
+                                        style: TextStyle(color: theme.textFaint, fontSize: 13)),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      track.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isCurrent ? theme.accentBright : theme.textColor,
+                                        fontSize: 14,
+                                        fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (track.artist.isNotEmpty && track.artist != widget.artistName)
+                                      Text(
+                                        track.artist,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(color: theme.textDim, fontSize: 12),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              Text(_fmt(track.duration),
+                                  style: TextStyle(color: theme.textFaint, fontSize: 12)),
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => _showTrackMenu(context, track, theme),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(10, 10, 0, 10),
+                                  child: Icon(Icons.more_vert_rounded, color: theme.textFaint, size: 18),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  childCount: _tracks.length,
+                ),
+              );
+            },
+          );
+        },
+      ),
+      if (_similarArtists.isNotEmpty)
+        SliverToBoxAdapter(child: _YouMightAlsoLike(artists: _similarArtists, theme: theme)),
+      const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+    ];
+  }
+
+  // ── Landscape layout: art + metadata left, track list right ───────────────
+  Widget _buildLandscapeLayout(BuildContext context, VibeTheme theme, String artUrl) {
+    const artSize = 220.0;
+    const leftW   = 260.0;
+
+    return Scaffold(
+      backgroundColor: theme.background,
+      body: Stack(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Left panel: art + metadata ───────────────────────────
+                SizedBox(
+                  width: leftW,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 52, 20, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Art
+                        Container(
+                          width: artSize,
+                          height: artSize,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(color: theme.accent.withAlpha(0x55), blurRadius: 30,
+                                  spreadRadius: 2, offset: const Offset(0, 8)),
+                              BoxShadow(color: Colors.black.withAlpha(0x77),
+                                  blurRadius: 16, offset: const Offset(0, 4)),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: CachedNetworkImage(
+                              imageUrl: artUrl, fit: BoxFit.cover,
+                              placeholder: (_, _) => Container(color: theme.surface),
+                              errorWidget: (_, _, _) => Container(color: theme.surface),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        // Title
+                        Text(
+                          widget.albumName,
+                          maxLines: 2, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.white, fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              shadows: [Shadow(color: theme.accent, blurRadius: 10)]),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          [
+                            widget.artistName,
+                            if (widget.year != null) '${widget.year}',
+                            if (_tracks.isNotEmpty)
+                              '${_tracks.length} ${_tracks.length == 1 ? 'track' : 'tracks'}',
+                          ].join('  ·  '),
+                          style: TextStyle(color: theme.accentBright, fontSize: 11,
+                              fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 14),
+                        // Controls
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () => _play(0),
+                              child: Container(
+                                width: 42, height: 42,
+                                decoration: BoxDecoration(
+                                  color: theme.accent, shape: BoxShape.circle,
+                                  boxShadow: [BoxShadow(color: theme.accent.withAlpha(0x99),
+                                      blurRadius: 14, spreadRadius: 1)],
+                                ),
+                                child: const Icon(Icons.play_arrow_rounded,
+                                    color: Colors.white, size: 24),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            if (_tracks.isNotEmpty)
+                              StreamBuilder<void>(
+                                stream: DownloadService.onChange,
+                                builder: (context, _) {
+                                  final allDone   = _tracks.every((t) => DownloadService.isDownloaded(t.id));
+                                  final anyActive = _tracks.any((t) => DownloadService.isDownloading(t.id));
+                                  if (allDone) return Icon(Icons.offline_pin, color: theme.accentBright, size: 24);
+                                  if (anyActive) {
+                                    return SizedBox(
+                                      width: 24, height: 24,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: theme.accentBright),
+                                    );
+                                  }
+                                  return GestureDetector(
+                                    onTap: () => DownloadService.downloadTracks(_tracks),
+                                    child: Icon(Icons.download_for_offline_outlined,
+                                        color: theme.textDim, size: 24),
+                                  );
+                                },
+                              ),
+                            const SizedBox(width: 14),
+                            if (_tracks.isNotEmpty)
+                              GestureDetector(
+                                onTap: () => _showAlbumMenu(context, theme),
+                                child: Icon(Icons.more_horiz_rounded, color: theme.textDim, size: 24),
+                              ),
+                          ],
+                        ),
+                        if (_session != null) ...[
+                          const SizedBox(height: 12),
+                          _ResumeBanner(
+                            session:  _session!,
+                            theme:    theme,
+                            onResume: _resume,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                // Divider
+                VerticalDivider(width: 1, thickness: 1, color: Colors.white.withAlpha(0x15)),
+                // ── Right panel: track list ──────────────────────────────
+                Expanded(
+                  child: CustomScrollView(
+                    slivers: _buildTrackSlivers(context, theme),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Back button
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: _NavButton(icon: Icons.arrow_back_ios_new, size: 18, onTap: () => context.pop()),
+            ),
+          ),
           const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
         ],
       ),

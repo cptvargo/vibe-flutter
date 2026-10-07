@@ -118,7 +118,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     }
 
     // Responsive columns — more on wider screens
-    final kColumns = screenW >= 900 ? 5 : screenW >= 600 ? 4 : 3;
+    final kColumns = screenW >= 900 ? 6 : screenW >= 700 ? 5 : screenW >= 500 ? 4 : 3;
 
     // Group by letter
     final groups  = <String, List<Map<String, dynamic>>>{};
@@ -282,7 +282,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       return Center(child: CircularProgressIndicator(color: theme.accentBright));
     }
 
-    final kColumns = screenW >= 900 ? 5 : screenW >= 600 ? 4 : 3;
+    final kColumns = screenW >= 900 ? 6 : screenW >= 700 ? 5 : screenW >= 500 ? 4 : 3;
 
     // Group artists by letter
     final groups  = <String, List<Map<String, dynamic>>>{};
