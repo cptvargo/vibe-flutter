@@ -1,15 +1,17 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/reauth_sheet.dart';
 import '../providers.dart';
+import '../services/preset_mix_art_service.dart';
 import '../services/preset_mix_service.dart';
 import '../services/recently_played_service.dart';
 import '../services/on_deck_service.dart';
@@ -220,8 +222,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     try {
       final results = await Future.wait([
         JellyfinApi.getRecentAlbums(limit: 27),
-        JellyfinApi.getArtists(),
-        JellyfinApi.getAIArtists(),
+        JellyfinApi.getArtists(limit: 2000),
+        JellyfinApi.getAIArtists(limit: 2000),
       ]);
       if (!mounted) return;
 
@@ -236,17 +238,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           })
           .toList();
 
-      // Artist Corner rotates once per day — consistent order all day.
+      // Artist Corner rotates once per day. Use the date itself as the seed so
+      // the same day always shows the same artist — no Hive persistence needed.
       final today = DateTime.now().toIso8601String().substring(0, 10);
-      final prefs = await Hive.openBox<dynamic>('vibe_prefs');
-      int seed;
-      if (prefs.get('artist_corner_date') == today) {
-        seed = (prefs.get('artist_corner_seed') as int?) ?? DateTime.now().millisecondsSinceEpoch;
-      } else {
-        seed = DateTime.now().millisecondsSinceEpoch;
-        await prefs.put('artist_corner_date', today);
-        await prefs.put('artist_corner_seed', seed);
-      }
+      final seed  = int.parse(today.replaceAll('-', ''));
       artists.shuffle(Random(seed));
 
       // Fetch the daily artist's albums — sequential after shuffle so we know
@@ -1826,10 +1821,10 @@ class _CreatePlaylistCard extends StatelessWidget {
 
 // ── Single preset mix card ────────────────────────────────────────────────────
 
-class _VibeMixCard extends StatelessWidget {
-  final VibeMix    mix;
-  final VibeTheme  theme;
-  final double     size;
+class _VibeMixCard extends StatefulWidget {
+  final VibeMix      mix;
+  final VibeTheme    theme;
+  final double       size;
   final VoidCallback onTap;
 
   const _VibeMixCard({
@@ -1840,27 +1835,69 @@ class _VibeMixCard extends StatelessWidget {
   });
 
   @override
+  State<_VibeMixCard> createState() => _VibeMixCardState();
+}
+
+class _VibeMixCardState extends State<_VibeMixCard> {
+  String? _artPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadArt();
+  }
+
+  Future<void> _loadArt() async {
+    final path = await PresetMixArtService.getArtPath(widget.mix.id);
+    if (mounted) setState(() => _artPath = path);
+  }
+
+  void _onLongPress() {
+    showModalBottomSheet<void>(
+      context:         context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MixArtMenu(
+        mix:         widget.mix,
+        theme:       widget.theme,
+        hasCustomArt: _artPath != null,
+        onChanged:   _loadArt,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final collage = mix.tracks
+    final collage = widget.mix.tracks
         .map((t) => t.artworkUrl)
         .toSet()
         .take(4)
         .toList();
 
+    final Widget artWidget = _artPath != null
+        ? Image.file(
+            File(_artPath!),
+            width:  widget.size,
+            height: widget.size,
+            fit:    BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                ArtCollage(imageUrls: collage, theme: widget.theme),
+          )
+        : ArtCollage(imageUrls: collage, theme: widget.theme);
+
     return VibeBounce(
-      onTap: onTap,
+      onTap:       widget.onTap,
+      onLongPress: _onLongPress,
       child: SizedBox(
-        width: size,
+        width: widget.size,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 2×2 collage with subtle glow
             DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color:      theme.accent.withAlpha(0x44),
+                    color:      widget.theme.accent.withAlpha(0x44),
                     blurRadius: 14,
                     offset:     const Offset(0, 4),
                   ),
@@ -1868,32 +1905,163 @@ class _VibeMixCard extends StatelessWidget {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width:  size,
-                  height: size,
-                  child: ArtCollage(imageUrls: collage, theme: theme),
+                child: Stack(
+                  children: [
+                    SizedBox(
+                      width:  widget.size,
+                      height: widget.size,
+                      child:  artWidget,
+                    ),
+                    // Camera badge — signals the artwork is editable
+                    Positioned(
+                      right: 6, bottom: 6,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color:        Colors.black.withAlpha(0x99),
+                          shape:        BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _artPath != null
+                              ? Icons.edit_rounded
+                              : Icons.camera_alt_rounded,
+                          color: Colors.white.withAlpha(0xCC),
+                          size:  13,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              mix.name,
+              widget.mix.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color:      theme.textColor,
+                color:      widget.theme.textColor,
                 fontSize:   13,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 2),
             Text(
-              '${mix.tracks.length} tracks',
+              '${widget.mix.tracks.length} tracks',
               style: TextStyle(
-                color:    theme.textFaint,
+                color:    widget.theme.textFaint,
                 fontSize: 11,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Mix artwork context menu ──────────────────────────────────────────────────
+
+class _MixArtMenu extends StatefulWidget {
+  final VibeMix      mix;
+  final VibeTheme    theme;
+  final bool         hasCustomArt;
+  final VoidCallback onChanged;
+
+  const _MixArtMenu({
+    required this.mix,
+    required this.theme,
+    required this.hasCustomArt,
+    required this.onChanged,
+  });
+
+  @override
+  State<_MixArtMenu> createState() => _MixArtMenuState();
+}
+
+class _MixArtMenuState extends State<_MixArtMenu> {
+  bool _busy = false;
+
+  Future<void> _pickArt() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final picker = ImagePicker();
+      final file   = await picker.pickImage(
+          source: ImageSource.gallery, imageQuality: 85);
+      if (file == null) {
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      await PresetMixArtService.saveArt(widget.mix.id, bytes);
+      if (mounted) { Navigator.pop(context); widget.onChanged(); }
+    } catch (_) {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _removeArt() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    await PresetMixArtService.clearArt(widget.mix.id);
+    if (mounted) { Navigator.pop(context); widget.onChanged(); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.only(bottom: 8),
+        decoration: const BoxDecoration(
+          color:        Color(0xFF12121E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color:        Colors.white.withAlpha(0x28),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                widget.mix.name,
+                style: TextStyle(
+                    color:      widget.theme.textColor,
+                    fontSize:   15,
+                    fontWeight: FontWeight.w700),
+              ),
+            ),
+            ListTile(
+              leading: Icon(Icons.image_rounded,
+                  color: widget.theme.accentBright, size: 22),
+              title: Text(
+                widget.hasCustomArt ? 'Change Artwork' : 'Set Artwork',
+                style: TextStyle(color: widget.theme.textColor),
+              ),
+              trailing: _busy
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white54),
+                    )
+                  : null,
+              onTap: _busy ? null : _pickArt,
+            ),
+            if (widget.hasCustomArt)
+              ListTile(
+                leading: const Icon(Icons.hide_image_rounded,
+                    color: Colors.redAccent, size: 22),
+                title: const Text('Remove Artwork',
+                    style: TextStyle(color: Colors.redAccent)),
+                onTap: _busy ? null : _removeArt,
+              ),
           ],
         ),
       ),

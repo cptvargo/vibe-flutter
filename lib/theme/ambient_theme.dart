@@ -12,6 +12,8 @@ class AmbientTheme {
   final Color waveformInactive;
   final Color waveformAnchor; // darkVibrant — deep start of gradient
   final Color waveformTail;   // muted — soft resolution at end of gradient
+  // 0.0 = pure black (suppress all glow overlays), 1.0 = full color glow
+  final double glowScale;
 
   const AmbientTheme({
     required this.glowColor,
@@ -24,6 +26,7 @@ class AmbientTheme {
     required this.waveformInactive,
     required this.waveformAnchor,
     required this.waveformTail,
+    this.glowScale = 1.0,
   });
 
   factory AmbientTheme.from(VibePalette p) {
@@ -32,6 +35,34 @@ class AmbientTheme {
         .reduce((a, b) => a > b ? a : b);
     final lightHSL  = HSLColor.fromColor(p.lightVibrant);
     final vibrantHSL = HSLColor.fromColor(p.vibrant);
+
+    // ── Predominantly-dark album (black background + any accent) ─────────
+    // Detected via darkMuted being near-black AND achromatic. Even if the
+    // image has a saturated halo or logo, the dark muted swatch reflects the
+    // majority background. Player renders pure black; accents stay white/silver.
+    final dmHSL = HSLColor.fromColor(p.darkMuted);
+    if (p.darkMuted.computeLuminance() < 0.010 && dmHSL.saturation < 0.20) {
+      final light  = lightHSL
+          .withSaturation(lightHSL.saturation.clamp(0.0, 0.12))
+          .withLightness(lightHSL.lightness.clamp(0.75, 0.95))
+          .toColor();
+      final anchor = Colors.white.withAlpha(0xCC);
+      final tail   = Colors.white.withAlpha(0x88);
+
+      return AmbientTheme(
+        glowColor:        light,
+        artworkGlow:      light,
+        backgroundDark:   Colors.black,
+        playButtonColor:  light,
+        playButtonGlow:   light.withAlpha(0xCC),
+        rimColor:         Colors.white.withAlpha(0x55),
+        waveformActive:   Colors.white,
+        waveformInactive: Colors.white.withAlpha(0x28),
+        waveformAnchor:   anchor,
+        waveformTail:     tail,
+        glowScale:        0.0,
+      );
+    }
 
     // ── Achromatic (black / grey) ─────────────────────────────────────────
     // All swatches have near-zero saturation. Boost the hue slightly so the
@@ -65,6 +96,7 @@ class AmbientTheme {
         waveformInactive: Colors.white.withAlpha(0x28),
         waveformAnchor:   anchor,
         waveformTail:     tail,
+        glowScale:        0.0,
       );
     }
 
@@ -130,6 +162,7 @@ class AmbientTheme {
     waveformInactive: Color(0x28FFFFFF),
     waveformAnchor:   Color(0xFF5B21B6),
     waveformTail:     Color(0xFF7C6B9E),
+    glowScale:        1.0,
   );
 
   static AmbientTheme lerp(AmbientTheme a, AmbientTheme b, double t) => AmbientTheme(
@@ -143,6 +176,7 @@ class AmbientTheme {
     waveformInactive: Color.lerp(a.waveformInactive, b.waveformInactive, t)!,
     waveformAnchor:   Color.lerp(a.waveformAnchor,   b.waveformAnchor,   t)!,
     waveformTail:     Color.lerp(a.waveformTail,     b.waveformTail,     t)!,
+    glowScale:        a.glowScale + (b.glowScale - a.glowScale) * t,
   );
 
   // Returns the most saturated color from candidates — used to avoid forcing a hue

@@ -73,11 +73,11 @@ class JellyfinApi {
 
   static Future<Map<String, dynamic>> getRecentAlbums({int limit = 20}) async {
     final main = await _get('/Users/$_user/Items?SortBy=DateCreated&SortOrder=Descending'
-        '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio$_lp');
+        '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio,DateCreated$_lp');
     if (_alp.isEmpty || _alp == _lp) return main;
     try {
       final ai = await _get('/Users/$_user/Items?SortBy=DateCreated&SortOrder=Descending'
-          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio$_alp');
+          '&IncludeItemTypes=MusicAlbum&Limit=$limit&Recursive=true&Fields=PrimaryImageAspectRatio,DateCreated$_alp');
       final mainItems = ((main['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       final aiItems   = ((ai['Items']   as List?) ?? []).cast<Map<String, dynamic>>();
       final seen    = <String>{};
