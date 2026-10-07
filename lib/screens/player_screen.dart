@@ -142,7 +142,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final dy = d.delta.dy;
     final screenH = MediaQuery.of(context).size.height;
 
-    void _snapIfNearOpen() {
+    void snapIfNearOpen() {
       if (_expansion.value >= 0.85) {
         _expansion.animateTo(1.0,
             curve: Curves.easeOut,
@@ -152,12 +152,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (_expansion.value > 0) {
       _expansion.value = (_expansion.value - dy / (screenH * 0.45)).clamp(0.0, 1.0);
-      _snapIfNearOpen();
+      snapIfNearOpen();
       return;
     }
     if (dy < 0 && _dragOffset == 0) {
       _expansion.value = (-dy / (screenH * 0.45)).clamp(0.0, 1.0);
-      _snapIfNearOpen();
+      snapIfNearOpen();
       return;
     }
     if (dy > 0 || _dragOffset > 0) {
@@ -214,9 +214,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-    final handler = ref.read(audioHandlerProvider);
-    final theme   = ref.watch(playerThemeProvider);
-    final ambient = ref.watch(ambientThemeProvider);
+    final handler     = ref.read(audioHandlerProvider);
+    final theme       = ref.watch(playerThemeProvider);
+    final ambient     = ref.watch(ambientThemeProvider);
+    final isLandscape = ref.watch(landscapeModeProvider);
+
+    if (isLandscape) {
+      return StreamBuilder<MediaItem?>(
+        stream: handler.mediaItem,
+        builder: (context, snap) {
+          final item = snap.data ?? _lastItem;
+          if (item == null) {
+            return const Scaffold(backgroundColor: Colors.black, body: SizedBox.expand());
+          }
+          return _LandscapePlayerBody(handler: handler, item: item, theme: theme, ambient: ambient);
+        },
+      );
+    }
 
     return AnimatedBuilder(
       animation: _expansion,
@@ -702,8 +716,66 @@ class _ContentState extends ConsumerState<_Content> {
                 children: [
                   Row(
                     children: [
-                      // Spacer balances the fire button so title/artist are centered
-                      const SizedBox(width: 48),
+                      // DJ mode toggle — opposite the fire button, keeps title centered
+                      Consumer(
+                        builder: (ctx, ref, _) {
+                          final djOn = ref.watch(djModeProvider);
+                          return IconButton(
+                            icon: Icon(
+                              Icons.headphones_rounded,
+                              color: djOn
+                                  ? ambient.waveformActive
+                                  : Colors.white.withAlpha(0x55),
+                              size: 24,
+                            ),
+                            onPressed: () {
+                              ref.read(djModeProvider.notifier).toggle();
+                              final nowOn = !djOn;
+                              ScaffoldMessenger.of(ctx).clearSnackBars();
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        nowOn
+                                            ? Icons.headphones_rounded
+                                            : Icons.music_note_rounded,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        nowOn
+                                            ? 'DJ Mode  ·  Crossfade'
+                                            : 'Gap Mode  ·  2s between tracks',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor:
+                                      Colors.black.withAlpha(0xCC),
+                                  duration: const Duration(seconds: 2),
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.only(
+                                    bottom: 24,
+                                    left: 32,
+                                    right: 32,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                  ),
+                                  elevation: 0,
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -743,7 +815,7 @@ class _ContentState extends ConsumerState<_Content> {
                       ),
                       IconButton(
                         icon: Icon(
-                          isFired ? Icons.whatshot : Icons.whatshot_outlined,
+                          isFired ? Icons.local_fire_department : Icons.local_fire_department_outlined,
                           color: isFired
                               ? const Color(0xFFFF6B1A)
                               : Colors.white.withAlpha(0x55),
@@ -1949,4 +2021,601 @@ class _WaveformPainter extends CustomPainter {
       colorMid    != old.colorMid    ||
       colorEnd    != old.colorEnd    ||
       colorTail   != old.colorTail;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  LANDSCAPE PLAYER
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Root landscape player body — ambient tween + layout scaffold.
+class _LandscapePlayerBody extends ConsumerStatefulWidget {
+  final VibeAudioHandler handler;
+  final MediaItem        item;
+  final VibeTheme        theme;
+  final AmbientTheme     ambient;
+
+  const _LandscapePlayerBody({
+    required this.handler,
+    required this.item,
+    required this.theme,
+    required this.ambient,
+  });
+
+  @override
+  ConsumerState<_LandscapePlayerBody> createState() => _LandscapePlayerBodyState();
+}
+
+class _LandscapePlayerBodyState extends ConsumerState<_LandscapePlayerBody> {
+  bool _showQueue = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final artUrl = widget.item.artUri?.toString();
+
+    return TweenAnimationBuilder<AmbientTheme>(
+      tween:    _AmbientTween(end: widget.ambient),
+      duration: const Duration(milliseconds: 650),
+      curve:    Curves.easeInOut,
+      builder: (context, animAmbient, _) {
+        final palette = _GlassButtonPalette.from(animAmbient);
+
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Ambient background
+              StreamBuilder<PlaybackState>(
+                stream: widget.handler.playbackState,
+                builder: (_, snap) => _AmbientBackground(
+                  ambient:   animAmbient,
+                  artUrl:    artUrl,
+                  isPlaying: snap.data?.playing ?? false,
+                ),
+              ),
+
+              // Content row
+              SafeArea(
+                child: Row(
+                  children: [
+                    // ── Art panel ──────────────────────────────────────────
+                    SizedBox(
+                      width: 300,
+                      child: Stack(
+                        children: [
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: AspectRatio(
+                                aspectRatio: 1,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(18),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: animAmbient.glowColor.withAlpha(0x88),
+                                        blurRadius: 40,
+                                        spreadRadius: -4,
+                                      ),
+                                      const BoxShadow(
+                                        color: Colors.black54,
+                                        blurRadius: 24,
+                                        offset: Offset(0, 12),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: artUrl != null
+                                        ? CachedNetworkImage(
+                                            imageUrl: artUrl,
+                                            fit: BoxFit.cover,
+                                          )
+                                        : Container(
+                                            color: animAmbient.glowColor.withAlpha(0x33),
+                                            child: const Icon(
+                                              Icons.music_note_rounded,
+                                              color: Colors.white38,
+                                              size: 48,
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Back button
+                          Positioned(
+                            top: 4, left: 4,
+                            child: IconButton(
+                              icon: Icon(Icons.keyboard_arrow_down_rounded,
+                                  color: Colors.white.withAlpha(0xBB), size: 28),
+                              onPressed: () => Navigator.maybePop(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // ── Right panel (controls ↔ queue) ─────────────────────
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 260),
+                        switchInCurve:  Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          final isQueue = child.key == const ValueKey('queue');
+                          return SlideTransition(
+                            position: Tween<Offset>(
+                              begin: isQueue
+                                  ? const Offset(1.0, 0)
+                                  : const Offset(-1.0, 0),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: FadeTransition(opacity: animation, child: child),
+                          );
+                        },
+                        child: _showQueue
+                            ? _LandscapeQueuePanel(
+                                key:       const ValueKey('queue'),
+                                handler:   widget.handler,
+                                theme:     widget.theme,
+                                ambient:   animAmbient,
+                                onClose:   () => setState(() => _showQueue = false),
+                              )
+                            : _LandscapeControls(
+                                key:         const ValueKey('controls'),
+                                handler:     widget.handler,
+                                item:        widget.item,
+                                theme:       widget.theme,
+                                ambient:     animAmbient,
+                                palette:     palette,
+                                onShowQueue: () => setState(() => _showQueue = true),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Landscape controls panel ──────────────────────────────────────────────────
+
+class _LandscapeControls extends ConsumerWidget {
+  final VibeAudioHandler  handler;
+  final MediaItem         item;
+  final VibeTheme         theme;
+  final AmbientTheme      ambient;
+  final _GlassButtonPalette palette;
+  final VoidCallback      onShowQueue;
+
+  const _LandscapeControls({
+    super.key,
+    required this.handler,
+    required this.item,
+    required this.theme,
+    required this.ambient,
+    required this.palette,
+    required this.onShowQueue,
+  });
+
+  static String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFired = ref.watch(fireMixProvider.select((list) => list.any((t) => t.id == item.id)));
+    final djOn    = ref.watch(djModeProvider);
+
+    return StreamBuilder<PlaybackState>(
+      stream: handler.playbackState,
+      builder: (context, statSnap) {
+        final isPlaying = statSnap.data?.playing ?? false;
+
+        return StreamBuilder<Duration>(
+          stream: handler.positionStream,
+          builder: (context, posSnap) {
+            final pos      = posSnap.data ?? Duration.zero;
+            final dur      = handler.duration ?? item.duration ?? Duration.zero;
+            final progress = dur.inMilliseconds > 0
+                ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0).toDouble()
+                : 0.0;
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 20, 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Title row: DJ icon | title + artist | fire icon
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          Icons.headphones_rounded,
+                          color: djOn
+                              ? ambient.waveformActive
+                              : Colors.white.withAlpha(0x55),
+                          size: 22,
+                        ),
+                        onPressed: () {
+                          ref.read(djModeProvider.notifier).toggle();
+                          final nowOn = !djOn;
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  nowOn ? Icons.headphones_rounded : Icons.music_note_rounded,
+                                  color: Colors.white, size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  nowOn ? 'DJ Mode  ·  Crossfade' : 'Gap Mode  ·  2s between tracks',
+                                  style: const TextStyle(color: Colors.white, fontSize: 13,
+                                      letterSpacing: 0.2),
+                                ),
+                              ],
+                            ),
+                            backgroundColor: Colors.black.withAlpha(0xCC),
+                            duration: const Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                            margin: const EdgeInsets.only(bottom: 24, left: 32, right: 32),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            elevation: 0,
+                          ));
+                        },
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              item.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white, fontSize: 15,
+                                fontWeight: FontWeight.w600, letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              item.artist ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: ambient.waveformActive.withAlpha(0xCC),
+                                fontSize: 12, letterSpacing: 0.1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          isFired
+                              ? Icons.local_fire_department
+                              : Icons.local_fire_department_outlined,
+                          color: isFired
+                              ? const Color(0xFFFF6B1A)
+                              : Colors.white.withAlpha(0x55),
+                          size: 22,
+                        ),
+                        onPressed: () {
+                          final extras = item.extras ?? {};
+                          final track  = VibeTrack(
+                            id:         item.id,
+                            url:        extras['url'] as String?
+                                            ?? JellyfinApi.streamUrl(item.id),
+                            title:      item.title,
+                            artist:     item.artist ?? '',
+                            album:      item.album ?? '',
+                            albumId:    extras['albumId'] as String?,
+                            artworkUrl: item.artUri?.toString() ?? '',
+                            colorUrl:   extras['colorUrl'] as String? ?? '',
+                            blurHash:   extras['blurHash'] as String?,
+                            duration:   item.duration ?? Duration(
+                              microseconds: extras['durationMicros'] as int? ?? 0,
+                            ),
+                            genres:     (extras['genres'] as List?)?.cast<String>() ?? const [],
+                            raw: {},
+                          );
+                          ref.read(fireMixProvider.notifier).toggle(track);
+                        },
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  // Waveform
+                  _WaveformSeekBar(
+                    progress:      progress,
+                    trackId:       item.id,
+                    colorAnchor:   ambient.waveformAnchor,
+                    colorMid:      ambient.playButtonColor,
+                    colorEnd:      ambient.waveformActive,
+                    colorTail:     ambient.waveformTail,
+                    inactiveColor: ambient.waveformInactive,
+                    onSeek: (ratio) => handler.seek(Duration(
+                      milliseconds: (ratio * dur.inMilliseconds).round(),
+                    )),
+                  ),
+
+                  // Time row
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_fmt(pos),
+                            style: TextStyle(color: Colors.white.withAlpha(0x77), fontSize: 11)),
+                        Text(_fmt(dur),
+                            style: TextStyle(color: Colors.white.withAlpha(0x77), fontSize: 11)),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Transport: prev | play/pause | next
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _PlainIconButton(
+                        icon: Icons.skip_previous_rounded,
+                        iconSize: 26,
+                        inactiveColor: Colors.white,
+                        activeColor: ambient.waveformActive,
+                        onTap: handler.skipToPrevious,
+                      ),
+                      const SizedBox(width: 20),
+                      _GlassTransportButton(
+                        icon: Icons.play_arrow_rounded,
+                        size: 60, iconSize: 28,
+                        intensity: 1.0,
+                        palette: palette,
+                        customIcon: isPlaying ? const _ThinPauseIcon(height: 16) : null,
+                        onTap: () => isPlaying ? handler.pause() : handler.play(),
+                      ),
+                      const SizedBox(width: 20),
+                      _PlainIconButton(
+                        icon: Icons.skip_next_rounded,
+                        iconSize: 26,
+                        inactiveColor: Colors.white,
+                        activeColor: ambient.waveformActive,
+                        onTap: handler.skipToNext,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Secondary row: shuffle | queue | repeat
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      StreamBuilder<bool>(
+                        stream: handler.shuffleModeEnabledStream,
+                        builder: (_, snap) {
+                          final on = snap.data ?? false;
+                          return _PlainIconButton(
+                            icon: Icons.shuffle_rounded,
+                            iconSize: 20,
+                            active: on,
+                            inactiveColor: Colors.white,
+                            activeColor: ambient.waveformActive,
+                            onTap: () => handler.setShuffleMode(
+                              on ? AudioServiceShuffleMode.none : AudioServiceShuffleMode.all,
+                            ),
+                          );
+                        },
+                      ),
+                      // Queue icon — morphs into queue panel
+                      GestureDetector(
+                        onTap: onShowQueue,
+                        child: Icon(
+                          Icons.queue_music_rounded,
+                          size: 20,
+                          color: Colors.white.withAlpha(0xBB),
+                        ),
+                      ),
+                      StreamBuilder<LoopMode>(
+                        stream: handler.loopModeStream,
+                        builder: (_, snap) {
+                          final loop = snap.data ?? LoopMode.off;
+                          return _PlainIconButton(
+                            icon: loop == LoopMode.one
+                                ? Icons.repeat_one_rounded
+                                : Icons.repeat_rounded,
+                            iconSize: 20,
+                            active: loop != LoopMode.off,
+                            inactiveColor: Colors.white,
+                            activeColor: ambient.waveformActive,
+                            onTap: () => handler.setRepeatMode(switch (loop) {
+                              LoopMode.off => AudioServiceRepeatMode.all,
+                              LoopMode.all => AudioServiceRepeatMode.one,
+                              _            => AudioServiceRepeatMode.none,
+                            }),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ── Landscape queue panel ─────────────────────────────────────────────────────
+
+class _LandscapeQueuePanel extends StatelessWidget {
+  final VibeAudioHandler handler;
+  final VibeTheme        theme;
+  final AmbientTheme     ambient;
+  final VoidCallback     onClose;
+
+  const _LandscapeQueuePanel({
+    super.key,
+    required this.handler,
+    required this.theme,
+    required this.ambient,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<MediaItem>>(
+      stream: handler.queue,
+      builder: (context, queueSnap) {
+        return StreamBuilder<MediaItem?>(
+          stream: handler.mediaItem,
+          builder: (context, mediaSnap) {
+            final tracks    = queueSnap.data ?? handler.queue.value;
+            final currentId = mediaSnap.data?.id;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Header row
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Queue',
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(0xCC),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(Icons.close_rounded,
+                            size: 20, color: Colors.white.withAlpha(0x88)),
+                        onPressed: onClose,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Track list
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 16, right: 12),
+                    itemCount: tracks.length,
+                    itemBuilder: (context, index) {
+                      final track     = tracks[index];
+                      final isCurrent = track.id == currentId;
+                      final artUrl    = track.artUri?.toString();
+
+                      return GestureDetector(
+                        onTap: () => handler.skipToQueueItem(index),
+                        behavior: HitTestBehavior.opaque,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: isCurrent
+                                ? ambient.waveformActive.withAlpha(0x1A)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                            border: isCurrent
+                                ? Border.all(
+                                    color: ambient.waveformActive.withAlpha(0x44))
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              // Art
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: SizedBox(
+                                  width: 36, height: 36,
+                                  child: artUrl != null
+                                      ? CachedNetworkImage(imageUrl: artUrl, fit: BoxFit.cover)
+                                      : Container(
+                                          color: ambient.glowColor.withAlpha(0x33),
+                                          child: const Icon(Icons.music_note_rounded,
+                                              size: 16, color: Colors.white38),
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              // Info
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      track.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isCurrent
+                                            ? ambient.waveformActive
+                                            : Colors.white.withAlpha(0xDD),
+                                        fontSize: 13,
+                                        fontWeight: isCurrent
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                      ),
+                                    ),
+                                    if ((track.artist ?? '').isNotEmpty)
+                                      Text(
+                                        track.artist!,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white.withAlpha(0x55),
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              // Playing indicator
+                              if (isCurrent)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 6),
+                                  child: Icon(Icons.equalizer_rounded,
+                                      size: 16, color: ambient.waveformActive),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 }

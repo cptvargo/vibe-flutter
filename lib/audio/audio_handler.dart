@@ -13,12 +13,10 @@ import '../services/last_played_service.dart';
 import '../services/on_deck_service.dart';
 
 // ─── Playback mode ─────────────────────────────────────────────────────────────
-// Only crossfade is implemented now. The enum exists so Smart/Gapless modes
-// can be wired in later without changing the public API.
 enum PlaybackMode {
-  none,      // hard cut (future: silence between tracks)
-  gapless,   // no gap, no overlap (future: live albums, DJ mixes)
-  crossfade, // equal-power overlap — active implementation
+  none,      // 2.5 s silence gap between tracks (DJ mode off)
+  gapless,   // no gap, no overlap (future: live albums)
+  crossfade, // equal-power overlap — default (DJ mode on)
   smart,     // auto-select by media type (future)
 }
 
@@ -119,12 +117,18 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // Volume tick interval. 50 ms gives ~20 fps — smooth and
   // not so frequent that it strains lower-end Android devices.
-  static const _tickMs = 50;
+  static const _tickMs  = 50;
+  static const _kGapMs  = 2000; // silence window when DJ mode is off
 
   // ── Crossfade runtime state ──────────────────────────────────────────────
   Timer? _fadeTimer;
   bool   _crossfading = false; // true from start of fade until player swap
   bool   _preloaded   = false; // secondary has a source loaded and buffered
+
+  // ── Gap runtime state ────────────────────────────────────────────────────
+  Timer? _gapTimer;
+  bool   _inGap        = false; // true during the silence window
+  int?   _gapTargetIdx;         // queue index we'll advance to at gap end
 
   // ── Listener subscriptions ───────────────────────────────────────────────
   StreamSubscription<PlayerState>? _stateSub;
@@ -385,7 +389,35 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       queue.add([]);
       return;
     }
-    await _hardSkipTo(nextIdx);
+    if (_mode == PlaybackMode.none) {
+      _startGap(nextIdx);
+    } else {
+      await _hardSkipTo(nextIdx);
+    }
+  }
+
+  // ── Gap (silence window between tracks) ──────────────────────────────────
+  //
+  // Starts a 2 s silence window then advances to the next track.
+  // Any user action (pause, skip, new queue) cancels the gap cleanly.
+  void _startGap(int nextIdx) {
+    _inGap        = true;
+    _gapTargetIdx = nextIdx;
+    _gapTimer = Timer(const Duration(milliseconds: _kGapMs), () {
+      _gapTimer     = null;
+      _inGap        = false;
+      _gapTargetIdx = null;
+      if (nextIdx >= 0 && nextIdx < _queue.length) {
+        _hardSkipTo(nextIdx);
+      }
+    });
+  }
+
+  void _cancelGap() {
+    _gapTimer?.cancel();
+    _gapTimer     = null;
+    _inGap        = false;
+    _gapTargetIdx = null;
   }
 
   // ── Hard skip (immediate cut, no fade) ───────────────────────────────────
@@ -483,6 +515,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // switching albums doesn't lose the in-progress session.
     _saveAlbumSession(_primary.position);
     _userPaused = false; // new queue = new intent to play
+    _cancelGap();
     _loading = true; // set before cancel so position ticks during cancel are suppressed
     await _cancelCrossfade();
     _reportStopped();
@@ -616,8 +649,18 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // Playback mode and crossfade duration are runtime-configurable so a future
   // settings screen can expose them without touching the engine.
-  void setPlaybackMode(PlaybackMode mode) => _mode = mode;
-  void setCrossfadeDuration(int seconds)  => _crossfadeSec = seconds.clamp(1, 15);
+  void setPlaybackMode(PlaybackMode mode) {
+    _mode = mode;
+    // Switching out of gap mode while mid-gap → play next track immediately
+    // so the user doesn't sit in silence wondering what happened.
+    if (mode != PlaybackMode.none && _inGap) {
+      final target = _gapTargetIdx;
+      _cancelGap();
+      if (target != null) _hardSkipTo(target); // fire-and-forget, guarded internally
+    }
+  }
+
+  void setCrossfadeDuration(int seconds) => _crossfadeSec = seconds.clamp(1, 15);
 
   // ── BaseAudioHandler overrides ────────────────────────────────────────────
 
@@ -665,7 +708,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> pause() async {
     _userPaused = true;
-    _preloaded  = false; // discard any stale preload; re-preload fresh on resume
+    _preloaded  = false;
+    _cancelGap(); // gap is an auto-advance — explicit pause cancels it
     await _primary.pause();
     // Save immediately on pause so On Deck / Jump Back In update without
     // waiting for the next periodic tick.
@@ -681,6 +725,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    _cancelGap();
     await _cancelCrossfade();
     _reportStopped();
     return _primary.stop();
@@ -692,6 +737,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToNext() async {
+    _cancelGap();
     // During a crossfade _queueIdx is already the incoming track, so _nextIndex
     // correctly resolves to the track after it — no special-case needed.
     final next = _nextIndex;
@@ -701,6 +747,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToPrevious() async {
+    _cancelGap();
     if (_crossfading) {
       // During a crossfade the user sees the secondary (incoming) track.
       // Mirror the normal ">3 s → restart / ≤3 s → go back" logic against secondary.
@@ -722,6 +769,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToQueueItem(int index) async {
+    _cancelGap();
     if (index < 0 || index >= _queue.length) return;
     await _hardSkipTo(index);
   }
