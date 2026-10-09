@@ -6,6 +6,7 @@ import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
 import '../services/download_service.dart';
+import '../services/smart_shuffle.dart';
 import '../theme/palette_service.dart';
 import '../widgets/mini_player.dart';
 
@@ -122,8 +123,8 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
             .toList();
       }
       if (tracks.isEmpty) return;
-      if (shuffle) tracks.shuffle();
-      ref.read(audioHandlerProvider).playTracks(tracks, startIndex: 0, playbackContext: 'shuffle');
+      final toPlay = shuffle ? smartShuffle(tracks, (t) => t.artist) : tracks;
+      ref.read(audioHandlerProvider).playTracks(toPlay, startIndex: 0, playbackContext: 'shuffle');
     } catch (e) {
       debugPrint('ArtistScreen._playAll error: $e');
     } finally {

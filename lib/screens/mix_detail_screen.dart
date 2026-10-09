@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
 import '../services/preset_mix_service.dart';
+import '../services/smart_shuffle.dart';
 import '../theme/vibe_theme.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/vibe_ui.dart';
@@ -65,7 +66,7 @@ class _MixDetailScreenState extends ConsumerState<MixDetailScreen> {
     final handler = ref.read(audioHandlerProvider);
     ref.read(isAIProvider.notifier).state = false;
     ref.read(playerOpenProvider.notifier).state = true;
-    final tracks = shuffle ? ([...filtered]..shuffle()) : filtered;
+    final tracks = shuffle ? smartShuffle(filtered, (t) => t.artist) : filtered;
     handler.playTracks(tracks, playbackContext: 'mix');
     context.push('/player');
   }

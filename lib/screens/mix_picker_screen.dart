@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
+import '../services/smart_shuffle.dart';
 import '../widgets/artist_avatar.dart';
 import '../theme/vibe_theme.dart';
 
@@ -120,7 +121,10 @@ class _MixPickerScreenState extends ConsumerState<MixPickerScreen>
         return ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       });
       final results = await Future.wait(futures);
-      final tracks = results.expand((l) => l).map(VibeTrack.fromJellyfin).toList()..shuffle();
+      final tracks = smartShuffle(
+        results.expand((l) => l).map(VibeTrack.fromJellyfin).toList(),
+        (t) => t.artist,
+      );
       if (tracks.isEmpty) return;
       ref.read(audioHandlerProvider).playTracks(tracks, playbackContext: 'station');
     } catch (e) {

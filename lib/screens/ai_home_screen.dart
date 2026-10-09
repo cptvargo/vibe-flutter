@@ -6,6 +6,7 @@ import '../api/jellyfin_models.dart';
 import '../providers.dart';
 import '../services/recently_played_service.dart';
 import '../theme/vibe_theme.dart';
+import '../services/smart_shuffle.dart';
 import '../widgets/vibe_ui.dart';
 
 const double _kAlbumSize  = 140;
@@ -163,7 +164,7 @@ class _AIHomeScreenState extends ConsumerState<AIHomeScreen>
           ref.read(isAIProvider.notifier).state = true;
           ref.read(playerOpenProvider.notifier).state = true;
           if (mounted) context.push('/player');
-          handler.playTracks([...tracks]..shuffle(), playbackContext: 'station');
+          handler.playTracks(smartShuffle(tracks, (t) => t.artist), playbackContext: 'station');
           return;
 
         case 'ai_radio':
@@ -171,10 +172,13 @@ class _AIHomeScreenState extends ConsumerState<AIHomeScreen>
           ref.read(playerOpenProvider.notifier).state = true;
           if (mounted) context.push('/player');
           final res = await JellyfinApi.getAIAllTracks(limit: 500);
-          final tracks = ((res['Items'] as List?) ?? [])
-              .cast<Map<String, dynamic>>()
-              .map((j) => VibeTrack.fromJellyfin(j, isAI: true))
-              .toList()..shuffle();
+          final tracks = smartShuffle(
+            ((res['Items'] as List?) ?? [])
+                .cast<Map<String, dynamic>>()
+                .map((j) => VibeTrack.fromJellyfin(j, isAI: true))
+                .toList(),
+            (t) => t.artist,
+          );
           if (tracks.isEmpty) return;
           handler.playTracks(tracks, playbackContext: 'station');
           return;

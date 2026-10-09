@@ -11,6 +11,7 @@ import '../services/genre_cluster_service.dart';
 import '../services/recently_played_service.dart';
 import '../services/last_played_service.dart';
 import '../services/on_deck_service.dart';
+import '../services/smart_shuffle.dart';
 
 // ─── Playback mode ─────────────────────────────────────────────────────────────
 enum PlaybackMode {
@@ -112,8 +113,9 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   bool get userPaused => _userPaused;
 
   // ── Playback mode / crossfade config ────────────────────────────────────
-  PlaybackMode _mode         = PlaybackMode.crossfade;
-  int          _crossfadeSec = 6; // configurable, default 6 s
+  PlaybackMode _mode        = PlaybackMode.crossfade;
+  int          _overlapSec = 10; // how early the next song starts before the current ends
+  final int    _fadeOutSec = 2;  // how long the current song fades out at the end
 
   // Volume tick interval. 50 ms gives ~20 fps — smooth and
   // not so frequent that it strains lower-end Android devices.
@@ -233,21 +235,20 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_mode != PlaybackMode.crossfade) return;
 
     final dur = _primary.duration;
-    // Skip crossfade for tracks shorter than 2× the fade window — they would
-    // begin fading almost immediately after starting.
-    if (dur == null || dur.inSeconds < _crossfadeSec * 2) return;
+    // Skip crossfade for tracks shorter than 2× the overlap window.
+    if (dur == null || dur.inSeconds < _overlapSec * 2) return;
 
     final nextIdx = _nextIndex;
     if (nextIdx == null) return; // last track — no crossfade
 
     final remaining = dur - pos;
 
-    if (!_preloaded && remaining.inSeconds <= (_crossfadeSec + 5)) {
+    if (!_preloaded && remaining.inSeconds <= (_overlapSec + 5)) {
       _preloadSecondary(nextIdx);
     }
 
     if (!_crossfading &&
-        remaining.inSeconds <= _crossfadeSec &&
+        remaining.inSeconds <= _overlapSec &&
         remaining.inMilliseconds > 300) {
       _beginCrossfade(remaining, nextIdx);
     }
@@ -263,6 +264,10 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       final item = _queue[nextIdx];
       final url  = item.extras?['url'] as String? ?? '';
       if (url.isEmpty) { _preloaded = false; return; }
+      // Stop secondary before loading so _cancelCrossfade can't race with an
+      // in-flight setAudioSource (which would throw and kill _hardSkipTo).
+      await _secondary.stop();
+      if (!_preloaded) return; // cancelled by _cancelCrossfade while stopping
       await _secondary.setAudioSource(
           AudioSource.uri(Uri.parse(url), tag: item));
     } catch (_) {
@@ -271,6 +276,9 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   // ── Crossfade ─────────────────────────────────────────────────────────────
+  // Two-phase overlap:
+  //   Phase 1 — both songs play at full volume for (_overlapSec - _fadeOutSec) s
+  //   Phase 2 — current song fades out over _fadeOutSec s; next song unchanged
   Future<void> _beginCrossfade(Duration remaining, int nextIdx) async {
     if (_crossfading) return;
     _crossfading = true; // prevent re-entry from concurrent position ticks
@@ -293,9 +301,9 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // Guard: crossfade may have been cancelled while we awaited setAudioSource.
     if (!_crossfading) return;
 
-    // Secondary plays from position 0 at silence.
-    await _secondary.setVolume(0.0);
-    _secondary.play(); // not awaited — resolves only when the track ends
+    // Next song starts at full volume immediately.
+    await _secondary.setVolume(1.0);
+    _secondary.play();
 
     // Advance all metadata to the incoming track immediately.
     // Lock screen, notification, and UI all show the new song as soon as the
@@ -316,23 +324,24 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _posSub = _secondary.positionStream.listen(_positionCtrl.add);
     _durSub = _secondary.durationStream.listen(_durationCtrl.add);
 
-    final totalMs    = remaining.inMilliseconds.clamp(300, _crossfadeSec * 1000);
-    final totalSteps = (totalMs / _tickMs).round().clamp(1, 9999);
-    int step = 0;
+    // Phase 1: let both songs play at full volume.
+    // Schedule the fade-out to begin _fadeOutSec before the current track ends.
+    final overlapMs = remaining.inMilliseconds
+        .clamp(_fadeOutSec * 1000 + 50, _overlapSec * 1000);
+    final waitMs = overlapMs - (_fadeOutSec * 1000);
 
     _fadeTimer?.cancel();
+    _fadeTimer = Timer(Duration(milliseconds: waitMs), _startFadeOut);
+  }
+
+  // Phase 2: fade current song out over _fadeOutSec seconds.
+  void _startFadeOut() {
+    final totalSteps = (_fadeOutSec * 1000 / _tickMs).round().clamp(1, 9999);
+    int step = 0;
     _fadeTimer = Timer.periodic(Duration(milliseconds: _tickMs), (timer) {
       step++;
       final t = (step / totalSteps).clamp(0.0, 1.0);
-
-      // Equal-power fade curves: cos²(θ) + sin²(θ) = 1.
-      // Constant total loudness across the transition — no perceived dip or bump.
-      final outVol = cos(t * pi / 2).clamp(0.0, 1.0);
-      final inVol  = sin(t * pi / 2).clamp(0.0, 1.0);
-
-      _primary.setVolume(outVol);
-      _secondary.setVolume(inVol);
-
+      _primary.setVolume((1.0 - t).clamp(0.0, 1.0));
       if (t >= 1.0) {
         timer.cancel();
         _finalizeCrossfade();
@@ -366,8 +375,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     final wasFading = _crossfading;
     _crossfading    = false;
     _preloaded      = false;
-    await _secondary.stop();
-    await _secondary.setVolume(1.0);
+    try { await _secondary.stop(); } catch (_) {}
+    try { await _secondary.setVolume(1.0); } catch (_) {}
     if (wasFading) await _primary.setVolume(1.0);
     _wirePrimary(); // restore primary forwarding after the cancel
   }
@@ -660,7 +669,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  void setCrossfadeDuration(int seconds) => _crossfadeSec = seconds.clamp(1, 15);
+  void setCrossfadeDuration(int seconds) => _overlapSec = seconds.clamp(3, 30);
 
   // ── BaseAudioHandler overrides ────────────────────────────────────────────
 
@@ -794,8 +803,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       // Keep the current track at the front; shuffle everything after it.
       final current = _queue[_queueIdx];
       final rest = [..._queue]..removeAt(_queueIdx);
-      rest.shuffle();
-      _queue    = [current, ...rest];
+      final spaced = smartShuffle<MediaItem>(rest, (m) => m.artist ?? '');
+      _queue    = [current, ...spaced];
       _queueIdx = 0;
       _currentIdxCtrl.add(_queueIdx);
       queue.add(List.unmodifiable(_queue));

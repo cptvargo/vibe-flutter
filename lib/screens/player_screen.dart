@@ -774,7 +774,7 @@ class _ContentState extends ConsumerState<_Content> {
                           final djOn = ref.watch(djModeProvider);
                           return IconButton(
                             icon: Icon(
-                              Icons.headphones_rounded,
+                              Icons.graphic_eq,
                               color: djOn
                                   ? ambient.waveformActive
                                   : Colors.white.withAlpha(0x55),
@@ -791,7 +791,7 @@ class _ContentState extends ConsumerState<_Content> {
                                     children: [
                                       Icon(
                                         nowOn
-                                            ? Icons.headphones_rounded
+                                            ? Icons.graphic_eq
                                             : Icons.music_note_rounded,
                                         color: Colors.white,
                                         size: 16,
@@ -2312,7 +2312,7 @@ class _LandscapeControls extends ConsumerWidget {
                     children: [
                       IconButton(
                         icon: Icon(
-                          Icons.headphones_rounded,
+                          Icons.graphic_eq,
                           color: djOn
                               ? ambient.waveformActive
                               : Colors.white.withAlpha(0x55),
@@ -2327,7 +2327,7 @@ class _LandscapeControls extends ConsumerWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  nowOn ? Icons.headphones_rounded : Icons.music_note_rounded,
+                                  nowOn ? Icons.graphic_eq : Icons.music_note_rounded,
                                   color: Colors.white, size: 16,
                                 ),
                                 const SizedBox(width: 8),

@@ -15,6 +15,7 @@ import '../services/preset_mix_art_service.dart';
 import '../services/preset_mix_service.dart';
 import '../services/recently_played_service.dart';
 import '../services/on_deck_service.dart';
+import '../services/smart_shuffle.dart';
 import '../theme/vibe_theme.dart';
 import '../widgets/artist_avatar.dart';
 import '../widgets/create_playlist_sheet.dart';
@@ -334,7 +335,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       MaterialPageRoute(
         builder: (_) => MixDetailScreen(
           name:   'Fire Mix',
-          tracks: [...tracks]..shuffle(),
+          tracks: smartShuffle(tracks, (t) => t.artist),
         ),
       ),
     );
@@ -1308,11 +1309,14 @@ class _ArtistMixSheetState extends ConsumerState<_ArtistMixSheet> {
       final fetched = await Future.wait(
           artists.map((a) => JellyfinApi.getArtistAllTracks(a.id)));
       final seen   = <String>{};
-      final tracks = fetched
-          .expand((r) => (r['Items'] as List? ?? []).cast<Map<String, dynamic>>())
-          .where((t) => seen.add(t['Id'] as String? ?? ''))
-          .map((t) => VibeTrack.fromJellyfin(t))
-          .toList()..shuffle();
+      final tracks = smartShuffle(
+        fetched
+            .expand((r) => (r['Items'] as List? ?? []).cast<Map<String, dynamic>>())
+            .where((t) => seen.add(t['Id'] as String? ?? ''))
+            .map((t) => VibeTrack.fromJellyfin(t))
+            .toList(),
+        (t) => t.artist,
+      );
       if (tracks.isEmpty || !mounted) return;
       ref.read(playerOpenProvider.notifier).state = true;
       ref.read(audioHandlerProvider).playTracks(
