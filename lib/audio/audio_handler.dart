@@ -176,6 +176,10 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       // stop→setAudioSource→play gap in _hardSkipTo / playTracks.
       if (state.playing) {
         _loading = false; // first playing:true → resume forwarding
+      } else if (state.processingState == ProcessingState.idle) {
+        // Load failed (missing file, network error in airplane mode, etc.).
+        // Clear the flag so the UI unfreezes instead of staying stuck at 00:00.
+        _loading = false;
       } else {
         return;
       }
@@ -442,7 +446,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _currentIdxCtrl.add(_queueIdx);
     _saveCurrentItem(item);
 
-    final url = item.extras?['url'] as String? ?? '';
+    // Re-check for a local file at skip time — the track may have been
+    // downloaded after the queue was originally built.
+    final localPath = DownloadService.localPathSync(item.id);
+    final url = (localPath != null && File(localPath).existsSync())
+        ? Uri.file(localPath).toString()
+        : (item.extras?['url'] as String? ?? '');
     try {
       await _primary.stop();
       await _primary.setVolume(1.0);

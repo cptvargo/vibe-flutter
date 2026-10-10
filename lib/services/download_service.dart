@@ -191,6 +191,18 @@ class DownloadService {
       await sink.flush();
       await sink.close();
 
+      // Guard against truncated downloads (WiFi drop mid-stream) and empty
+      // files (iCloud placeholder on-device, 0-byte server response, etc.).
+      // M4A files store the duration atom at the end; a partial file has no
+      // duration and plays as 00:00.
+      if (total > 0 && received < total) {
+        throw Exception('Incomplete download: got $received of $total bytes');
+      }
+      final writtenSize = await File(path).length();
+      if (writtenSize == 0) {
+        throw Exception('Downloaded file is empty for track ${track.id}');
+      }
+
       // Disc + track numbers come from Jellyfin metadata (raw), which is
       // populated when the track was fetched from the album screen.
       // fallbackPosition is only used when raw is empty (should never happen
