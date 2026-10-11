@@ -690,7 +690,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_queue.isEmpty) {
       final item = mediaItem.value;
       if (item == null) return;
-      final url = item.extras?['url'] as String? ?? '';
+      // Re-check for a local file — extras['url'] may be a stream URL from
+      // before the track was downloaded, or downloaded after the last save.
+      final localPath = DownloadService.localPathSync(item.id);
+      final url = (localPath != null && File(localPath).existsSync())
+          ? Uri.file(localPath).toString()
+          : (item.extras?['url'] as String? ?? '');
       if (url.isEmpty) return;
       _queue    = [item];
       _queueIdx = 0;

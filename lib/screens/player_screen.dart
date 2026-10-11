@@ -758,7 +758,15 @@ class _ContentState extends ConsumerState<_Content> {
             stream: handler.positionStream,
             builder: (context, posSnap) {
               final pos      = posSnap.data ?? Duration.zero;
-              final dur      = handler.duration ?? item.duration ?? Duration.zero;
+              // Prefer a non-zero duration: handler (live) → item.duration →
+              // extras fallback for cold-start before the source is loaded.
+              final hDur     = handler.duration;
+              final dur      = (hDur != null && hDur.inMilliseconds > 0)
+                  ? hDur
+                  : ((item.duration?.inMilliseconds ?? 0) > 0
+                      ? item.duration!
+                      : Duration(microseconds:
+                          item.extras?['durationMicros'] as int? ?? 0));
               final progress = dur.inMilliseconds > 0
                   ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0).toDouble()
                   : 0.0;
