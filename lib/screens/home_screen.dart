@@ -1,18 +1,14 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/reauth_sheet.dart';
 import '../providers.dart';
-import '../services/preset_mix_art_service.dart';
-import '../services/preset_mix_service.dart';
 import '../services/recently_played_service.dart';
 import '../services/on_deck_service.dart';
 import '../services/smart_shuffle.dart';
@@ -22,6 +18,7 @@ import '../widgets/create_playlist_sheet.dart';
 import '../widgets/vibe_out_section.dart';
 import '../widgets/vibe_ui.dart';
 import 'mix_detail_screen.dart';
+import 'playlists_tab.dart';
 
 const _kAlbumSize = 140.0;
 
@@ -214,11 +211,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // ── Library data ──────────────────────────────────────────────────────────────
 
-  Future<void> _loadData({bool refreshMixes = false}) async {
-    if (refreshMixes) {
-      await PresetMixService.invalidate();
-      ref.invalidate(presetMixesProvider);
-    }
+  Future<void> _loadData() async {
     setState(() { _loading = true; _error = null; });
     try {
       final results = await Future.wait([
@@ -341,35 +334,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  void _openPresetMix(VibeMix mix) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MixDetailScreen(
-          name:   mix.name,
-          tracks: mix.tracks,
-          mixId:  mix.id,
-        ),
-      ),
-    );
-  }
-
-  void _openCreatePlaylist(VibeTheme theme) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => CreatePlaylistSheet(
-        theme:     theme,
-        onCreated: (_) => ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:  Text('Playlist created'),
-            duration: Duration(seconds: 2),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
@@ -395,7 +359,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           Positioned.fill(child: _ErrorState(error: _error!, theme: theme, onRetry: _loadData))
         else
           RefreshIndicator(
-            onRefresh: () => _loadData(refreshMixes: true),
+            onRefresh: _loadData,
             child: ListView(
               padding: EdgeInsets.only(
                 top:    8,
@@ -532,17 +496,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   child: _ArtistMixCard(theme: theme, onTap: _openArtistMix),
                 ),
 
-                // ── Mixed For You ─────────────────────────────────────────────
+                // ── Your Playlists ────────────────────────────────────────────
                 const SizedBox(height: 28),
                 VibeFadeSlide(animation: _sec(5),
-                  child: VibeSectionHeader(title: 'Mixed For You', theme: theme)),
-                const SizedBox(height: 14),
-                VibeFadeSlide(animation: _sec(5),
-                  child: _MixedForYouRow(
-                    theme:            theme,
-                    onOpen:           _openPresetMix,
-                    onCreatePlaylist: () => _openCreatePlaylist(theme),
-                  ),
+                  child: _UserPlaylistsSection(theme: theme),
                 ),
 
                 // ── Daily Artist ──────────────────────────────────────────────
@@ -1678,81 +1635,257 @@ class _ArtistMixSheetState extends ConsumerState<_ArtistMixSheet> {
   }
 }
 
-// ── Mixed For You horizontal row ──────────────────────────────────────────────
+// ── User Playlists section ────────────────────────────────────────────────────
 
-class _MixedForYouRow extends ConsumerWidget {
-  final VibeTheme              theme;
-  final void Function(VibeMix) onOpen;
-  final VoidCallback           onCreatePlaylist;
-  const _MixedForYouRow({
-    required this.theme,
-    required this.onOpen,
-    required this.onCreatePlaylist,
-  });
+class _UserPlaylistsSection extends StatefulWidget {
+  final VibeTheme theme;
+  const _UserPlaylistsSection({required this.theme});
+
+  @override
+  State<_UserPlaylistsSection> createState() => _UserPlaylistsSectionState();
+}
+
+class _UserPlaylistsSectionState extends State<_UserPlaylistsSection> {
+  List<Map<String, dynamic>> _playlists = [];
+  bool _loading = true;
 
   static const _kCardW = 148.0;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final asyncMixes = ref.watch(presetMixesProvider);
-    return asyncMixes.when(
-      loading: () => SizedBox(
-        height: _kCardW + 52,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding:         const EdgeInsets.symmetric(horizontal: 20),
-          itemCount:       5, // 4 shimmer + 1 create card placeholder
-          separatorBuilder: (_, _) => const SizedBox(width: 14),
-          itemBuilder: (_, i) => i < 4
-              ? _shimmer(_kCardW)
-              : _CreatePlaylistCard(theme: theme, size: _kCardW, onTap: onCreatePlaylist),
-        ),
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final res   = await JellyfinApi.getPlaylists();
+      final items = ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
+      if (mounted) setState(() { _playlists = items; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _openPlaylist(Map<String, dynamic> playlist) {
+    showModalBottomSheet<void>(
+      context:            context,
+      isScrollControlled: true,
+      backgroundColor:    Colors.transparent,
+      builder: (_) => PlaylistSheet(
+        playlist: playlist,
+        theme:    widget.theme,
+        onReload: _load,
       ),
-      error: (_, _) => SizedBox(
-        height: _kCardW + 52,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding:         const EdgeInsets.symmetric(horizontal: 20),
-          children: [
-            _CreatePlaylistCard(theme: theme, size: _kCardW, onTap: onCreatePlaylist),
-          ],
-        ),
-      ),
-      data: (mixes) {
-        final visible = mixes.take(4).toList();
-        return SizedBox(
-          height: _kCardW + 52,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding:         const EdgeInsets.symmetric(horizontal: 20),
-            itemCount:       visible.length + 1, // mixes + create card
-            separatorBuilder: (_, _) => const SizedBox(width: 14),
-            itemBuilder: (_, i) {
-              if (i < visible.length) {
-                return _VibeMixCard(
-                  mix:   visible[i],
-                  theme: theme,
-                  size:  _kCardW,
-                  onTap: () => onOpen(visible[i]),
-                );
-              }
-              return _CreatePlaylistCard(
-                  theme: theme, size: _kCardW, onTap: onCreatePlaylist);
-            },
-          ),
-        );
-      },
     );
   }
 
-  Widget _shimmer(double size) => Container(
-    width:  size,
-    height: size,
+  Future<void> _createPlaylist() async {
+    await showModalBottomSheet<void>(
+      context:            context,
+      isScrollControlled: true,
+      backgroundColor:    Colors.transparent,
+      builder: (_) => CreatePlaylistSheet(
+        theme:     widget.theme,
+        onCreated: (_) => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:  Text('Playlist created'),
+            duration: Duration(seconds: 2),
+          ),
+        ),
+      ),
+    );
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (mounted) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Your Playlists',
+                style: TextStyle(
+                  color:         theme.textColor,
+                  fontSize:      18,
+                  fontWeight:    FontWeight.w700,
+                  letterSpacing: 0.4,
+                  shadows: [
+                    Shadow(color: theme.accent.withAlpha(0xCC), blurRadius: 10),
+                    Shadow(color: theme.accentBright.withAlpha(0x66), blurRadius: 24),
+                  ],
+                ),
+              ),
+              if (_playlists.isNotEmpty)
+                GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => _PlaylistsPage(theme: theme),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'See All',
+                        style: TextStyle(
+                          color:      theme.accentBright,
+                          fontSize:   13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(Icons.chevron_right_rounded,
+                          color: theme.accentBright, size: 18),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_loading)
+          SizedBox(
+            height: _kCardW + 52,
+            child: ListView.separated(
+              scrollDirection:  Axis.horizontal,
+              padding:          const EdgeInsets.symmetric(horizontal: 20),
+              itemCount:        3,
+              separatorBuilder: (_, _) => const SizedBox(width: 14),
+              itemBuilder: (_, _) => Container(
+                width:  _kCardW,
+                height: _kCardW,
+                decoration: BoxDecoration(
+                  color:        theme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            height: _kCardW + 52,
+            child: ListView.separated(
+              scrollDirection:  Axis.horizontal,
+              padding:          const EdgeInsets.symmetric(horizontal: 20),
+              itemCount:        _playlists.length + 1,
+              separatorBuilder: (_, _) => const SizedBox(width: 14),
+              itemBuilder: (_, i) {
+                if (i == _playlists.length) {
+                  return _CreatePlaylistCard(
+                    theme: theme,
+                    size:  _kCardW,
+                    onTap: _createPlaylist,
+                  );
+                }
+                final pl    = _playlists[i];
+                final id    = pl['Id']         as String? ?? '';
+                final name  = pl['Name']       as String? ?? '';
+                final count = pl['ChildCount'] as int?    ?? 0;
+                final tag   = (pl['ImageTags'] as Map?)
+                    ?.cast<String, dynamic>()['Primary'] as String?;
+                final artUrl = id.isNotEmpty && tag != null
+                    ? JellyfinApi.imageUrl(id, size: 300, tag: tag)
+                    : '';
+                return VibeBounce(
+                  onTap: () => _openPlaylist(pl),
+                  child: SizedBox(
+                    width: _kCardW,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: artUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl:    artUrl,
+                                  width:       _kCardW,
+                                  height:      _kCardW,
+                                  fit:         BoxFit.cover,
+                                  errorWidget: (_, _, _) =>
+                                      _placeholder(theme),
+                                )
+                              : _placeholder(theme),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color:      theme.textColor,
+                            fontSize:   13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$count ${count == 1 ? 'song' : 'songs'}',
+                          style: TextStyle(color: theme.textFaint, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _placeholder(VibeTheme theme) => Container(
+    width:  _kCardW,
+    height: _kCardW,
     decoration: BoxDecoration(
-      color:        theme.surface,
-      borderRadius: BorderRadius.circular(12),
+      gradient: LinearGradient(
+        begin:  Alignment.topLeft,
+        end:    Alignment.bottomRight,
+        colors: [theme.surface, theme.background],
+      ),
     ),
+    child: Icon(Icons.queue_music_rounded, color: theme.textFaint, size: 40),
   );
+}
+
+// ── All Playlists full-screen page ────────────────────────────────────────────
+
+class _PlaylistsPage extends StatelessWidget {
+  final VibeTheme theme;
+  const _PlaylistsPage({required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: theme.background,
+      appBar: AppBar(
+        backgroundColor:  theme.background,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
+              color: theme.textColor, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          'Your Playlists',
+          style: TextStyle(
+            color:      theme.textColor,
+            fontSize:   17,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      body: PlaylistsTab(theme: theme),
+    );
+  }
 }
 
 // ── Create playlist card ──────────────────────────────────────────────────────
@@ -1817,256 +1950,6 @@ class _CreatePlaylistCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text('Create your own',
                 style: TextStyle(color: theme.textFaint, fontSize: 11)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Single preset mix card ────────────────────────────────────────────────────
-
-class _VibeMixCard extends StatefulWidget {
-  final VibeMix      mix;
-  final VibeTheme    theme;
-  final double       size;
-  final VoidCallback onTap;
-
-  const _VibeMixCard({
-    required this.mix,
-    required this.theme,
-    required this.size,
-    required this.onTap,
-  });
-
-  @override
-  State<_VibeMixCard> createState() => _VibeMixCardState();
-}
-
-class _VibeMixCardState extends State<_VibeMixCard> {
-  String? _artPath;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadArt();
-  }
-
-  Future<void> _loadArt() async {
-    final path = await PresetMixArtService.getArtPath(widget.mix.id);
-    if (mounted) setState(() => _artPath = path);
-  }
-
-  void _onLongPress() {
-    showModalBottomSheet<void>(
-      context:         context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _MixArtMenu(
-        mix:         widget.mix,
-        theme:       widget.theme,
-        hasCustomArt: _artPath != null,
-        onChanged:   _loadArt,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final collage = widget.mix.tracks
-        .map((t) => t.artworkUrl)
-        .toSet()
-        .take(4)
-        .toList();
-
-    final Widget artWidget = _artPath != null
-        ? Image.file(
-            File(_artPath!),
-            width:  widget.size,
-            height: widget.size,
-            fit:    BoxFit.cover,
-            errorBuilder: (_, _, _) =>
-                ArtCollage(imageUrls: collage, theme: widget.theme),
-          )
-        : ArtCollage(imageUrls: collage, theme: widget.theme);
-
-    return VibeBounce(
-      onTap:       widget.onTap,
-      onLongPress: _onLongPress,
-      child: SizedBox(
-        width: widget.size,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color:      widget.theme.accent.withAlpha(0x44),
-                    blurRadius: 14,
-                    offset:     const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Stack(
-                  children: [
-                    SizedBox(
-                      width:  widget.size,
-                      height: widget.size,
-                      child:  artWidget,
-                    ),
-                    // Camera badge — signals the artwork is editable
-                    Positioned(
-                      right: 6, bottom: 6,
-                      child: Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color:        Colors.black.withAlpha(0x99),
-                          shape:        BoxShape.circle,
-                        ),
-                        child: Icon(
-                          _artPath != null
-                              ? Icons.edit_rounded
-                              : Icons.camera_alt_rounded,
-                          color: Colors.white.withAlpha(0xCC),
-                          size:  13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              widget.mix.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color:      widget.theme.textColor,
-                fontSize:   13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '${widget.mix.tracks.length} tracks',
-              style: TextStyle(
-                color:    widget.theme.textFaint,
-                fontSize: 11,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Mix artwork context menu ──────────────────────────────────────────────────
-
-class _MixArtMenu extends StatefulWidget {
-  final VibeMix      mix;
-  final VibeTheme    theme;
-  final bool         hasCustomArt;
-  final VoidCallback onChanged;
-
-  const _MixArtMenu({
-    required this.mix,
-    required this.theme,
-    required this.hasCustomArt,
-    required this.onChanged,
-  });
-
-  @override
-  State<_MixArtMenu> createState() => _MixArtMenuState();
-}
-
-class _MixArtMenuState extends State<_MixArtMenu> {
-  bool _busy = false;
-
-  Future<void> _pickArt() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      final picker = ImagePicker();
-      final file   = await picker.pickImage(
-          source: ImageSource.gallery, imageQuality: 85);
-      if (file == null) {
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
-      final bytes = await file.readAsBytes();
-      await PresetMixArtService.saveArt(widget.mix.id, bytes);
-      if (mounted) { Navigator.pop(context); widget.onChanged(); }
-    } catch (_) {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _removeArt() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    await PresetMixArtService.clearArt(widget.mix.id);
-    if (mounted) { Navigator.pop(context); widget.onChanged(); }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.only(bottom: 8),
-        decoration: const BoxDecoration(
-          color:        Color(0xFF12121E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 10),
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color:        Colors.white.withAlpha(0x28),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(
-                widget.mix.name,
-                style: TextStyle(
-                    color:      widget.theme.textColor,
-                    fontSize:   15,
-                    fontWeight: FontWeight.w700),
-              ),
-            ),
-            ListTile(
-              leading: Icon(Icons.image_rounded,
-                  color: widget.theme.accentBright, size: 22),
-              title: Text(
-                widget.hasCustomArt ? 'Change Artwork' : 'Set Artwork',
-                style: TextStyle(color: widget.theme.textColor),
-              ),
-              trailing: _busy
-                  ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white54),
-                    )
-                  : null,
-              onTap: _busy ? null : _pickArt,
-            ),
-            if (widget.hasCustomArt)
-              ListTile(
-                leading: const Icon(Icons.hide_image_rounded,
-                    color: Colors.redAccent, size: 22),
-                title: const Text('Remove Artwork',
-                    style: TextStyle(color: Colors.redAccent)),
-                onTap: _busy ? null : _removeArt,
-              ),
           ],
         ),
       ),

@@ -72,7 +72,7 @@ class _PlaylistsTabState extends ConsumerState<PlaylistsTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _PlaylistSheet(
+      builder: (_) => PlaylistSheet(
         playlist: playlist,
         theme: widget.theme,
         onReload: _load,
@@ -185,22 +185,23 @@ class _PlaylistsTabState extends ConsumerState<PlaylistsTab> {
 
 // ── Playlist detail sheet ──────────────────────────────────────────────────────
 
-class _PlaylistSheet extends ConsumerStatefulWidget {
+class PlaylistSheet extends ConsumerStatefulWidget {
   final Map<String, dynamic> playlist;
   final VibeTheme theme;
   final VoidCallback onReload;
 
-  const _PlaylistSheet({
+  const PlaylistSheet({
+    super.key,
     required this.playlist,
     required this.theme,
     required this.onReload,
   });
 
   @override
-  ConsumerState<_PlaylistSheet> createState() => _PlaylistSheetState();
+  ConsumerState<PlaylistSheet> createState() => _PlaylistSheetState();
 }
 
-class _PlaylistSheetState extends ConsumerState<_PlaylistSheet> {
+class _PlaylistSheetState extends ConsumerState<PlaylistSheet> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
 
