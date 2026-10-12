@@ -121,8 +121,16 @@ class _MixPickerScreenState extends ConsumerState<MixPickerScreen>
         return ((res['Items'] as List?) ?? []).cast<Map<String, dynamic>>();
       });
       final results = await Future.wait(futures);
+      // Balance artist representation: cap each artist to the fewest tracks
+      // any selected artist has, then randomly sample from larger catalogs.
+      // Prevents one dominant artist from flooding a 3-artist mix.
+      final minCount = results.fold(999999, (m, l) => l.length < m ? l.length : m);
+      final balanced = results.expand((l) {
+        if (l.length <= minCount) return l;
+        return (List<Map<String, dynamic>>.from(l)..shuffle()).take(minCount).toList();
+      }).toList();
       final tracks = smartShuffle(
-        results.expand((l) => l).map(VibeTrack.fromJellyfin).toList(),
+        balanced.map(VibeTrack.fromJellyfin).toList(),
         (t) => t.artist,
       );
       if (tracks.isEmpty) return;
