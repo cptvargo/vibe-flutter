@@ -359,23 +359,25 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
     final oldPrimary = _primary;
 
-    // Flip roles and rewire listeners BEFORE any await so that:
-    //   1. _stateSub moves to playerB immediately — playerA's idle event when
-    //      we stop it below is never forwarded to audio_service, preventing
-    //      a spurious (idle, playing:false) that deactivates the iOS audio
-    //      session.  Without this, skipping right after a crossfade produces
-    //      silence because the session is inactive when the new track plays.
-    //   2. All role-state settles synchronously.  A concurrent _cancelCrossfade
-    //      sees _crossfading=false and returns immediately, so no await-guard
-    //      is needed.
+    // Cancel the old primary's state listener BEFORE stopping it so that its
+    // idle event is never forwarded to audio_service.  Forwarding (idle, false)
+    // while playerB is already playing deactivates the iOS audio session and
+    // causes silence on the next manual skip.
+    _stateSub?.cancel();
+    _stateSub = null;
+
+    await oldPrimary.stop();
+    await oldPrimary.setVolume(1.0); // reset for its next role as secondary
+
+    // If _cancelCrossfade ran while we were awaiting (user tapped skip mid-fade)
+    // it already set _crossfading = false, called _wirePrimary(), and owns
+    // both players.  Do not flip _aIsPrimary or call _wirePrimary again.
+    if (!_crossfading) return;
+
     _aIsPrimary  = !_aIsPrimary;
     _crossfading = false;
     _preloaded   = false;
     _wirePrimary();
-
-    // Clean up the old primary.  Its events are no longer forwarded.
-    await oldPrimary.stop();
-    await oldPrimary.setVolume(1.0); // reset volume for its next role as secondary
   }
 
   Future<void> _cancelCrossfade() async {
