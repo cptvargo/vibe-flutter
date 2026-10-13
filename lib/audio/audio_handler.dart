@@ -177,9 +177,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       if (state.playing) {
         _loading = false; // first playing:true → resume forwarding
       } else if (state.processingState == ProcessingState.idle) {
-        // Load failed (missing file, network error in airplane mode, etc.).
-        // Clear the flag so the UI unfreezes instead of staying stuck at 00:00.
+        // The stop() called inside _hardSkipTo emits idle here.  Clear the
+        // flag so the UI doesn't freeze, but do NOT forward idle to
+        // audio_service — that would signal iOS the session ended and stale
+        // the lock-screen transport controls before the new track starts.
         _loading = false;
+        return;
       } else {
         return;
       }
