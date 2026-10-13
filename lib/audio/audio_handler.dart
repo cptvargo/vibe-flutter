@@ -185,6 +185,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       }
     }
 
+    // During a crossfade _finalizeCrossfade stops the old primary (now at
+    // volume 0) while the new track is already audible.  That stop emits
+    // (idle, false) here, which would make audio_service report "stopped" to
+    // the lock-screen player and stale the transport controls.  Suppress it.
+    if (_crossfading && state.processingState == ProcessingState.idle) return;
+
     playbackState.add(playbackState.value.copyWith(
       controls: [
         MediaControl.skipToPrevious,
@@ -357,26 +363,18 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _fadeTimer?.cancel();
     _fadeTimer = null;
 
-    final oldPrimary = _primary;
+    // Primary volume is already at 0.0.  Stopping a silent player drains the
+    // audio pipeline into silence — no transient, no click.
+    await _primary.stop();
+    await _primary.setVolume(1.0); // reset for its next role as secondary
 
-    // Cancel the old primary's state listener BEFORE stopping it so that its
-    // idle event is never forwarded to audio_service.  Forwarding (idle, false)
-    // while playerB is already playing deactivates the iOS audio session and
-    // causes silence on the next manual skip.
-    _stateSub?.cancel();
-    _stateSub = null;
-
-    await oldPrimary.stop();
-    await oldPrimary.setVolume(1.0); // reset for its next role as secondary
-
-    // If _cancelCrossfade ran while we were awaiting (user tapped skip mid-fade)
-    // it already set _crossfading = false, called _wirePrimary(), and owns
-    // both players.  Do not flip _aIsPrimary or call _wirePrimary again.
-    if (!_crossfading) return;
-
+    // Swap roles.  The old secondary (which has been playing cleanly for
+    // several seconds) becomes the new primary.
     _aIsPrimary  = !_aIsPrimary;
     _crossfading = false;
     _preloaded   = false;
+
+    // Rewire all listeners to the new primary.
     _wirePrimary();
   }
 
