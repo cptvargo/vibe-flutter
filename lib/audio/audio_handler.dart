@@ -357,10 +357,22 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _fadeTimer?.cancel();
     _fadeTimer = null;
 
+    // Capture the old primary BEFORE any await — _aIsPrimary must not be
+    // re-read after a yield because a concurrent _hardSkipTo/_cancelCrossfade
+    // may have already taken ownership of the players.
+    final oldPrimary = _primary;
+
     // Primary volume is already at 0.0.  Stopping a silent player drains the
     // audio pipeline into silence — no transient, no click.
-    await _primary.stop();
-    await _primary.setVolume(1.0); // reset for its next role as secondary
+    await oldPrimary.stop();
+    await oldPrimary.setVolume(1.0); // reset for its next role as secondary
+
+    // If _cancelCrossfade ran while we were awaiting (the user tapped skip
+    // mid-fade) it already set _crossfading = false and took ownership of
+    // both players.  Bail out — do NOT flip _aIsPrimary or call _wirePrimary,
+    // or we would redirect all UI events to the idle secondary player and
+    // leave the actually-playing player orphaned.
+    if (!_crossfading) return;
 
     // Swap roles.  The old secondary (which has been playing cleanly for
     // several seconds) becomes the new primary.
