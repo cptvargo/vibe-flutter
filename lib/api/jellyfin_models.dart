@@ -18,7 +18,8 @@ class VibeTrack {
   final String colorUrl;   // 32px thumbnail for fast color extraction
   final String? blurHash;
   final Duration duration;
-  final int?  trackNumber;
+  final int?    trackNumber;
+  final double? normalizationGain; // ReplayGain in dB from Jellyfin; null = no tag
   final List<String> genres;
   final Map<String, dynamic> raw;
   final bool isAI;
@@ -36,6 +37,7 @@ class VibeTrack {
     this.blurHash,
     required this.duration,
     this.trackNumber,
+    this.normalizationGain,
     this.genres = const [],
     required this.raw,
     this.isAI = false,
@@ -52,10 +54,11 @@ class VibeTrack {
     artworkUrl: j['artworkUrl'] as String,
     colorUrl:   j['colorUrl']   as String,
     blurHash:   j['blurHash']   as String?,
-    duration:   Duration(microseconds: j['durationMicros'] as int),
-    genres:     (j['genres'] as List?)?.cast<String>() ?? const [],
-    raw:        {},
-    isAI:       j['isAI']       as bool? ?? false,
+    duration:          Duration(microseconds: j['durationMicros'] as int),
+    normalizationGain: (j['normalizationGain'] as num?)?.toDouble(),
+    genres:            (j['genres'] as List?)?.cast<String>() ?? const [],
+    raw:               {},
+    isAI:              j['isAI'] as bool? ?? false,
   );
 
   Map<String, dynamic> toJson() => {
@@ -69,9 +72,10 @@ class VibeTrack {
     'artworkUrl':    artworkUrl,
     'colorUrl':      colorUrl,
     'blurHash':      blurHash,
-    'durationMicros': duration.inMicroseconds,
-    'genres':        genres,
-    'isAI':          isAI,
+    'durationMicros':    duration.inMicroseconds,
+    'normalizationGain': normalizationGain,
+    'genres':            genres,
+    'isAI':              isAI,
   };
 
   factory VibeTrack.fromJellyfin(Map<String, dynamic> j, {bool isAI = false}) {
@@ -99,11 +103,12 @@ class VibeTrack {
       artworkUrl:  JellyfinApi.imageUrl(albumId, size: 600, tag: imageTag),
       colorUrl:    JellyfinApi.colorExtractionUrl(albumId),
       blurHash:    blurHash,
-      duration:    Duration(microseconds: (ticks / 10).round()),
-      trackNumber: j['IndexNumber'] as int?,
-      genres:      ((j['Genres'] as List?) ?? []).cast<String>(),
-      raw:         j,
-      isAI:        isAI,
+      duration:          Duration(microseconds: (ticks / 10).round()),
+      trackNumber:       j['IndexNumber'] as int?,
+      normalizationGain: (j['NormalizationGain'] as num?)?.toDouble(),
+      genres:            ((j['Genres'] as List?) ?? []).cast<String>(),
+      raw:               j,
+      isAI:              isAI,
     );
   }
 }

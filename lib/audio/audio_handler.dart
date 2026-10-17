@@ -38,19 +38,20 @@ MediaItem _toMediaItem(VibeTrack t, {String playbackContext = 'album'}) {
     duration: t.duration,
     artUri:   Uri.parse(t.artworkUrl),
     extras: {
-      'url':             url,
-      'albumId':         t.albumId,
-      'artistId':        t.artistId,
-      'albumArtist':     (t.raw['AlbumArtist'] as String?)?.isNotEmpty == true
-                           ? t.raw['AlbumArtist'] as String
-                           : t.artist.split(' & ').first,
-      'colorUrl':        t.colorUrl,
-      'blurHash':        t.blurHash,
-      'durationMicros':  t.duration.inMicroseconds,
-      'trackNumber':     t.trackNumber,
-      'isAI':            t.isAI,
-      'playbackContext': playbackContext,
-      'genres':          t.genres,
+      'url':               url,
+      'albumId':           t.albumId,
+      'artistId':          t.artistId,
+      'albumArtist':       (t.raw['AlbumArtist'] as String?)?.isNotEmpty == true
+                               ? t.raw['AlbumArtist'] as String
+                               : t.artist.split(' & ').first,
+      'colorUrl':          t.colorUrl,
+      'blurHash':          t.blurHash,
+      'durationMicros':    t.duration.inMicroseconds,
+      'trackNumber':       t.trackNumber,
+      'isAI':              t.isAI,
+      'playbackContext':   playbackContext,
+      'genres':            t.genres,
+      'normalizationGain': t.normalizationGain,
     },
   );
 }
@@ -145,6 +146,15 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   VibeAudioHandler() {
     _wirePrimary();
+  }
+
+  // Convert a MediaItem's ReplayGain dB tag to a linear volume scalar.
+  // Positive dB (quiet track boosted) is capped at 1.0 — just_audio can't
+  // exceed unity gain, and we never want to clip a loud track upward.
+  double _gainVolumeFor(MediaItem item) {
+    final gainDb = item.extras?['normalizationGain'] as double?;
+    if (gainDb == null) return 1.0;
+    return (pow(10.0, gainDb / 20.0) as double).clamp(0.0, 1.0);
   }
 
   // ── Wire all listeners to the current primary player ─────────────────────
@@ -261,6 +271,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     }
 
     if (_mode != PlaybackMode.crossfade) return;
+    // Crossfade is off when shuffled — unrelated tracks should cut cleanly.
+    if (_shuffle) return;
 
     final dur = _primary.duration;
     // Skip crossfade for tracks shorter than 2× the overlap window.
@@ -329,8 +341,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // Guard: crossfade may have been cancelled while we awaited setAudioSource.
     if (!_crossfading) return;
 
-    // Next song starts at full volume immediately.
-    await _secondary.setVolume(1.0);
+    // Next song starts at its normalised volume immediately.
+    await _secondary.setVolume(_gainVolumeFor(nextItem));
     _secondary.play();
 
     // Advance all metadata to the incoming track immediately.
@@ -405,7 +417,15 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _preloaded      = false;
     try { await _secondary.stop(); } catch (_) {}
     try { await _secondary.setVolume(1.0); } catch (_) {}
-    if (wasFading) await _primary.setVolume(1.0);
+    if (wasFading) {
+      // Restore primary to its track's gain (it was being faded down).
+      // _hardSkipTo will overwrite this immediately, but the brief moment
+      // between cancel and the next setAudioSource should not be silent.
+      final gainVol = _queueIdx < _queue.length
+          ? _gainVolumeFor(_queue[_queueIdx])
+          : 1.0;
+      await _primary.setVolume(gainVol);
+    }
     _wirePrimary(); // restore primary forwarding after the cancel
   }
 
@@ -478,7 +498,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
         : (item.extras?['url'] as String? ?? '');
     try {
       await _primary.stop();
-      await _primary.setVolume(1.0);
+      await _primary.setVolume(_gainVolumeFor(item));
       await _primary.setAudioSource(
           AudioSource.uri(Uri.parse(url), tag: item));
       _reportStarted(item.id);
@@ -575,7 +595,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _saveCurrentItem(item);
 
     await _primary.stop();
-    await _primary.setVolume(1.0);
+    await _primary.setVolume(_gainVolumeFor(item));
     try {
       await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
       if (startPositionMs > 0) {
@@ -726,7 +746,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _loading  = true;
       queue.add(List.unmodifiable(_queue));
       try {
-        await _primary.setVolume(1.0);
+        await _primary.setVolume(_gainVolumeFor(item));
         await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
         _reportStarted(item.id);
         // Cold-start: queue has only this one track. Fill it from InstantMix in
