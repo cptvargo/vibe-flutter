@@ -113,6 +113,22 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _userPaused = false;
   bool get userPaused => _userPaused;
 
+  // ── Sleep timer ──────────────────────────────────────────────────────────
+  DateTime? _sleepAt; // null = off
+  final _sleepCtrl = StreamController<Duration?>.broadcast();
+  Stream<Duration?> get sleepRemainingStream => _sleepCtrl.stream;
+  Duration? get sleepRemaining {
+    if (_sleepAt == null) return null;
+    final r = _sleepAt!.difference(DateTime.now());
+    return r.isNegative ? Duration.zero : r;
+  }
+
+  // minutes == 0 cancels the timer.
+  void setSleepTimer(int minutes) {
+    _sleepAt = minutes > 0 ? DateTime.now().add(Duration(minutes: minutes)) : null;
+    _sleepCtrl.add(sleepRemaining);
+  }
+
   // ── Playback mode / crossfade config ────────────────────────────────────
   PlaybackMode _mode        = PlaybackMode.crossfade;
   int          _overlapSec = 10; // how early the next song starts before the current ends
@@ -173,6 +189,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _positionCtrl.add(pos);
       _onPrimaryPosition(pos);
       _maybeSaveSession(pos);
+      _tickSleepTimer();
     });
 
     _durSub = _primary.durationStream.listen((dur) {
@@ -249,6 +266,25 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // completed events it emits before the stop are intentionally ignored.
     if (state.processingState == ProcessingState.completed && !_crossfading) {
       _onTrackNaturalEnd();
+    }
+  }
+
+  // ── Sleep timer tick ─────────────────────────────────────────────────────
+  int _lastSleepBroadcastSec = -1;
+
+  void _tickSleepTimer() {
+    if (_sleepAt == null) return;
+    final remaining = sleepRemaining!;
+    // Broadcast an update at most once per second to keep the countdown UI smooth.
+    final sec = remaining.inSeconds;
+    if (sec != _lastSleepBroadcastSec) {
+      _lastSleepBroadcastSec = sec;
+      _sleepCtrl.add(remaining);
+    }
+    if (remaining == Duration.zero) {
+      _sleepAt = null;
+      _userPaused = true; // treat as explicit pause so BT reconnect won't resume
+      _primary.pause();
     }
   }
 
@@ -577,6 +613,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // switching albums doesn't lose the in-progress session.
     _saveAlbumSession(_primary.position);
     _userPaused = false; // new queue = new intent to play
+    _sleepAt    = null;  // explicit play always cancels any sleep timer
+    _sleepCtrl.add(null);
     _cancelGap();
     _loading = true; // set before cancel so position ticks during cancel are suppressed
     await _cancelCrossfade();
