@@ -307,8 +307,6 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     }
 
     if (_mode != PlaybackMode.crossfade) return;
-    // Crossfade is off when shuffled — unrelated tracks should cut cleanly.
-    if (_shuffle) return;
 
     final dur = _primary.duration;
     // Skip crossfade for tracks shorter than 2× the overlap window.
