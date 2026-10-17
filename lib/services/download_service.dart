@@ -160,7 +160,7 @@ class DownloadService {
       // Use the stream URL (same as playback) — it needs no special Download
       // permission and never redirects. Add the Emby auth header because some
       // Jellyfin versions reject api_key-only requests on certain endpoints.
-      final req = await _httpClient.getUrl(Uri.parse(JellyfinApi.streamUrl(track.id)));
+      final req = await _httpClient.getUrl(Uri.parse(JellyfinApi.downloadUrl(track.id)));
       req.headers.add('X-Emby-Authorization', JellyfinApi.authHeader);
       final res = await req.close();
 
