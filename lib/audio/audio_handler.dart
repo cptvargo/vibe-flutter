@@ -165,7 +165,22 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _maybeSaveSession(pos);
     });
 
-    _durSub = _primary.durationStream.listen(_durationCtrl.add);
+    _durSub = _primary.durationStream.listen((dur) {
+      _durationCtrl.add(dur);
+      // When just_audio reads the real duration from the file (e.g. a
+      // downloaded track whose stored durationMicros was 0 because Jellyfin
+      // returned RunTimeTicks:null), backfill the MediaItem so the lock screen
+      // and audio_service also show the correct duration instead of 00:00.
+      if (dur != null && dur > Duration.zero && _queueIdx < _queue.length) {
+        final old = _queue[_queueIdx];
+        if ((old.duration ?? Duration.zero) < const Duration(seconds: 1)) {
+          final updated = old.copyWith(duration: dur);
+          _queue[_queueIdx] = updated;
+          queue.add(List.from(_queue));
+          mediaItem.add(updated);
+        }
+      }
+    });
   }
 
   // ── Primary player state → audio_service playbackState ───────────────────

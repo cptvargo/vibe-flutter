@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import '../api/jellyfin_api.dart';
@@ -202,6 +203,11 @@ class DownloadService {
       if (writtenSize == 0) {
         throw Exception('Downloaded file is empty for track ${track.id}');
       }
+      // Verify the saved file starts with a known audio magic header so we
+      // catch cases where Jellyfin returned an error page instead of audio
+      // (e.g. the Content-Length check above was skipped because the server
+      // used chunked transfer and didn't set Content-Length).
+      await _verifyAudioMagic(path, track.id);
 
       // Disc + track numbers come from Jellyfin metadata (raw), which is
       // populated when the track was fetched from the album screen.
@@ -261,6 +267,40 @@ class DownloadService {
       );
       await Future.wait(slots);
     });
+  }
+
+  // Reads the first 12 bytes of a downloaded file and checks for known audio
+  // magic headers. Throws if none match, which causes the caller to delete the
+  // file and surface an error rather than storing a non-playable file in Hive.
+  static Future<void> _verifyAudioMagic(String path, String trackId) async {
+    final f = File(path);
+    final raf = await f.open();
+    final header = Uint8List(12);
+    try {
+      await raf.readInto(header);
+    } finally {
+      await raf.close();
+    }
+    // MP3: ID3 tag ('ID3') or sync word (0xFF 0xFx)
+    final isMP3 = (header[0] == 0x49 && header[1] == 0x44 && header[2] == 0x33) ||
+                  (header[0] == 0xFF && (header[1] & 0xE0) == 0xE0);
+    // FLAC: 'fLaC'
+    final isFLAC = header[0] == 0x66 && header[1] == 0x4C &&
+                   header[2] == 0x61 && header[3] == 0x43;
+    // M4A / AAC / MP4: bytes 4–7 == 'ftyp'
+    final isMp4 = header[4] == 0x66 && header[5] == 0x74 &&
+                  header[6] == 0x79 && header[7] == 0x70;
+    // OGG
+    final isOGG = header[0] == 0x4F && header[1] == 0x67 &&
+                  header[2] == 0x67 && header[3] == 0x53;
+    // WAV / AIFF: 'RIFF'/'FORM'
+    final isWAV  = header[0] == 0x52 && header[1] == 0x49 &&
+                   header[2] == 0x46 && header[3] == 0x46;
+    final isAIFF = header[0] == 0x46 && header[1] == 0x4F &&
+                   header[2] == 0x52 && header[3] == 0x4D;
+    if (!isMP3 && !isFLAC && !isMp4 && !isOGG && !isWAV && !isAIFF) {
+      throw Exception('Downloaded file for $trackId is not a recognised audio format');
+    }
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────
