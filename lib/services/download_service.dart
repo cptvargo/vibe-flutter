@@ -157,15 +157,24 @@ class DownloadService {
     // path is determined after we know the Content-Type of the response.
     String? path;
     try {
-      // Use the stream URL (same as playback) — it needs no special Download
-      // permission and never redirects. Add the Emby auth header because some
-      // Jellyfin versions reject api_key-only requests on certain endpoints.
-      final req = await _httpClient.getUrl(Uri.parse(JellyfinApi.downloadUrl(track.id)));
-      req.headers.add('X-Emby-Authorization', JellyfinApi.authHeader);
-      final res = await req.close();
-
-      if (res.statusCode != 200) {
-        throw Exception('HTTP ${res.statusCode} for track ${track.id}');
+      // Try the transcode URL first (Jellyfin encodes FLAC→M4A for smaller
+      // files). If the server rejects it (transcoding not configured, 4xx/5xx),
+      // fall back to static=true which always serves the original file.
+      final transcodeReq = await _httpClient.getUrl(Uri.parse(JellyfinApi.downloadUrl(track.id)));
+      transcodeReq.headers.add('X-Emby-Authorization', JellyfinApi.authHeader);
+      final transcodeRes = await transcodeReq.close();
+      final HttpClientResponse res;
+      if (transcodeRes.statusCode == 200) {
+        res = transcodeRes;
+      } else {
+        await transcodeRes.drain<void>();
+        final staticReq = await _httpClient.getUrl(Uri.parse(JellyfinApi.streamUrl(track.id)));
+        staticReq.headers.add('X-Emby-Authorization', JellyfinApi.authHeader);
+        final staticRes = await staticReq.close();
+        if (staticRes.statusCode != 200) {
+          throw Exception('HTTP ${staticRes.statusCode} for track ${track.id}');
+        }
+        res = staticRes;
       }
 
       // Derive extension from Content-Type so iOS AVPlayer can identify the
