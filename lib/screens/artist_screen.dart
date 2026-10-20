@@ -463,17 +463,21 @@ class _ArtistHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final heroHeight  = isLandscape ? 180.0 : 320.0;
+    // Request 800px so the image stays crisp on 3× retina displays.
+    final imageUrl = JellyfinApi.imageUrl(artistId, size: 800);
+
     return Stack(
       children: [
         SizedBox(
-          height: MediaQuery.of(context).orientation == Orientation.landscape ? 180 : 300,
+          height: heroHeight,
           width: double.infinity,
           child: CachedNetworkImage(
-            imageUrl: JellyfinApi.imageUrl(artistId, size: 320),
+            imageUrl: imageUrl,
             fit: BoxFit.cover,
             alignment: Alignment.topCenter,
-            placeholder: (_, _) =>
-                const ColoredBox(color: Color(0xFF0D0D1A)),
+            placeholder: (_, _) => const ColoredBox(color: Color(0xFF0D0D1A)),
             errorWidget: (_, _, _) => ColoredBox(
               color: const Color(0xFF0D0D1A),
               child: Center(
@@ -489,29 +493,29 @@ class _ArtistHero extends StatelessWidget {
             ),
           ),
         ),
-        // Status bar darkening gradient
+        // Top darkening so the back button stays readable
         Positioned(
           top: 0, left: 0, right: 0,
           child: SizedBox(
-            height: 80,
+            height: 90,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.black.withAlpha(0x77), Colors.transparent],
-                  stops: const [0.0, 0.35],
+                  colors: [Colors.black.withAlpha(0x88), Colors.transparent],
+                  stops: const [0.0, 1.0],
                 ),
               ),
             ),
           ),
         ),
         // Bottom fade into page background
-        const Positioned(
+        Positioned(
           bottom: 0, left: 0, right: 0,
           child: SizedBox(
-            height: 110,
-            child: DecoratedBox(
+            height: heroHeight * 0.5,
+            child: const DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
