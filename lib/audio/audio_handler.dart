@@ -414,9 +414,15 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // Phase 2: fade current song out over _fadeOutSec seconds.
   void _startFadeOut() {
+    // Guard: the one-shot Timer that calls this cannot be cancelled once its
+    // callback is already in the event queue.  If _cancelCrossfade ran before
+    // this callback got a chance to execute, bail out — do NOT create the
+    // periodic timer or the periodic ticks will fade out the skipped-to track.
+    if (!_crossfading) return;
     final totalSteps = (_fadeOutSec * 1000 / _tickMs).round().clamp(1, 9999);
     int step = 0;
     _fadeTimer = Timer.periodic(Duration(milliseconds: _tickMs), (timer) {
+      if (!_crossfading) { timer.cancel(); return; }
       step++;
       final t = (step / totalSteps).clamp(0.0, 1.0);
       _primary.setVolume((1.0 - t).clamp(0.0, 1.0));
@@ -428,6 +434,11 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> _finalizeCrossfade() async {
+    // Guard against a stale call arriving after _cancelCrossfade already ran
+    // (e.g. the last periodic tick was queued when cancel() was called).
+    // Without this guard, _primary.stop() kills the skipped-to track and the
+    // subsequent _aIsPrimary swap wires listeners to the wrong player.
+    if (!_crossfading) return;
     _fadeTimer?.cancel();
     _fadeTimer = null;
 
