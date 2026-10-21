@@ -1153,7 +1153,6 @@ class _AlbumTrackMenu extends StatelessWidget {
             const SizedBox(height: 8),
           ],
         ),
-      ),
     );
   }
 

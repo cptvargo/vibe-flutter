@@ -201,7 +201,6 @@ class _AddToPlaylistSheetState extends State<AddToPlaylistSheet> {
               ),
           ],
         ),
-      ),
     );
   }
 }
