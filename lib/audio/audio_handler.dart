@@ -576,6 +576,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _naturalEndQueued = false; // skip supersedes any pending natural-end
     _loading = true; // set before cancel so position ticks during cancel are suppressed
     await _cancelCrossfade();
+    // _cancelCrossfade calls _wirePrimary(), which may immediately receive a
+    // (ready, playing:true) event from the old primary (it was mid-fade and
+    // still playing). That clears _loading prematurely, causing the subsequent
+    // _primary.stop() to forward an idle state to audio_service and kill the
+    // audio session before the new source loads. Re-asserting here closes that window.
+    _loading = true;
 
     _reportStopped();
     _queueIdx        = index;
@@ -687,6 +693,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     return _enqueue(() async {
       _loading = true; // set before cancel so position ticks during cancel are suppressed
       await _cancelCrossfade();
+      _loading = true; // re-assert: _wirePrimary inside _cancelCrossfade may have cleared it
       _reportStopped();
 
       _queue           = tracks.map((t) => _toMediaItem(t, playbackContext: playbackContext)).toList();
