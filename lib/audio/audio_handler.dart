@@ -399,6 +399,13 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> _beginCrossfade(Duration remaining, int nextIdx) async {
     if (_crossfading) return;
     _crossfading = true; // prevent re-entry from concurrent position ticks
+    // Advance _queueIdx NOW, before any await. skipToPrevious checks _queueIdx
+    // to compute _prevIndex while _crossfading=true. If we wait until after
+    // _secondary.play() (the original location), a skip that fires between here
+    // and that point sees the old index and computes the wrong previous track —
+    // or null when Song A is index 0 — and _hardSkipTo is never called, leaving
+    // the engine in a cancelled-crossfade-but-no-source state.
+    _queueIdx = nextIdx;
 
     final nextItem = _queue[nextIdx];
 
@@ -430,7 +437,6 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // Lock screen, notification, and UI all show the new song as soon as the
     // crossfade begins — this is the behaviour users expect from premium apps.
     _reportStopped();
-    _queueIdx        = nextIdx;
     _lastReportedSec = -1;
     mediaItem.add(nextItem);
     _currentIdxCtrl.add(_queueIdx);
