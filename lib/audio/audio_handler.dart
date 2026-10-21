@@ -478,16 +478,23 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _primary.setVolume((1.0 - t).clamp(0.0, 1.0));
       if (t >= 1.0) {
         timer.cancel();
-        _finalizeCrossfade();
+        // Run finalize through the op queue so it can never execute concurrently
+        // with a skip op.  Without this, _finalizeCrossfade could be suspended
+        // at `await _primary.stop()` while a skip's _hardSkipTo is mid-load on
+        // the same player — stop() increments _activationCount immediately,
+        // which makes just_audio's checkInterruption() throw
+        // PlayerInterruptedException inside setAudioSource, so _primary.play()
+        // is never called and audio dies silently.
+        _enqueue(_finalizeCrossfade);
       }
     });
   }
 
   Future<void> _finalizeCrossfade() async {
-    // Guard against a stale call arriving after _cancelCrossfade already ran
-    // (e.g. the last periodic tick was queued when cancel() was called).
-    // Without this guard, _primary.stop() kills the skipped-to track and the
-    // subsequent _aIsPrimary swap wires listeners to the wrong player.
+    // Guard against a stale call arriving after _cancelCrossfade already ran.
+    // When a skip op precedes this in the op queue, _cancelCrossfade will have
+    // set _crossfading = false before we run — exit here so we don't stop the
+    // newly-loaded track or corrupt _aIsPrimary.
     if (!_crossfading) return;
     _fadeTimer?.cancel();
     _fadeTimer = null;
@@ -495,6 +502,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // Primary volume is already at 0.0.  Stopping a silent player drains the
     // audio pipeline into silence — no transient, no click.
     await _primary.stop();
+
+    // Second guard: if somehow _cancelCrossfade ran while we were awaiting
+    // stop() (shouldn't happen now that we're serialised via _opQueue, but
+    // defence in depth), bail out without swapping _aIsPrimary.
+    if (!_crossfading) return;
+
     await _primary.setVolume(1.0); // reset for its next role as secondary
 
     // Swap roles.  The old secondary (which has been playing cleanly for
