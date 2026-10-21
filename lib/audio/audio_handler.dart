@@ -377,6 +377,10 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
     // Next song starts at its normalised volume immediately.
     await _secondary.setVolume(_gainVolumeFor(nextItem));
+    // Guard again: _cancelCrossfade may have run while setVolume was awaited.
+    // Without this, _secondary.play() fires after a skip, the stale fade timer
+    // starts running against the new primary, and audio dies.
+    if (!_crossfading) return;
     _secondary.play();
 
     // Advance all metadata to the incoming track immediately.

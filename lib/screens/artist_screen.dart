@@ -176,48 +176,12 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                 SliverToBoxAdapter(
                   child: Column(
                     children: [
-                      // Small gap so hero clears the status bar visually
-                      const SizedBox(height: 52),
-                      _ArtistHero(
+                            _ArtistHero(
                         artistId:   _artistId,
                         artistName: widget.artistName,
+                        palette:    palette,
+                        albumCount: _albums.length,
                       ),
-
-                      const SizedBox(height: 16),
-
-                      // Artist name
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Text(
-                          widget.artistName,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.4,
-                            shadows: [
-                              Shadow(
-                                color: palette.vibrant.withAlpha(0x99),
-                                blurRadius: 20,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      if (_albums.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          '${_albums.length} album${_albums.length == 1 ? '' : 's'}',
-                          style: TextStyle(
-                            color: Colors.white.withAlpha(0x55),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
 
                       const SizedBox(height: 24),
 
@@ -458,75 +422,124 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
 class _ArtistHero extends StatelessWidget {
   final String artistId;
   final String artistName;
+  final VibePalette palette;
+  final int albumCount;
 
-  const _ArtistHero({required this.artistId, required this.artistName});
+  const _ArtistHero({
+    required this.artistId,
+    required this.artistName,
+    required this.palette,
+    required this.albumCount,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-    final heroHeight  = isLandscape ? 180.0 : 320.0;
-    // Request 800px so the image stays crisp on 3× retina displays.
-    final imageUrl = JellyfinApi.imageUrl(artistId, size: 800);
+    final heroHeight  = isLandscape ? 240.0 : 460.0;
+    final imageUrl    = JellyfinApi.imageUrl(artistId, size: 800);
 
-    return Stack(
-      children: [
-        SizedBox(
-          height: heroHeight,
-          width: double.infinity,
-          child: CachedNetworkImage(
-            imageUrl: imageUrl,
-            fit: BoxFit.cover,
-            alignment: Alignment.topCenter,
-            placeholder: (_, _) => const ColoredBox(color: Color(0xFF0D0D1A)),
-            errorWidget: (_, _, _) => ColoredBox(
-              color: const Color(0xFF0D0D1A),
-              child: Center(
-                child: Text(
-                  artistName.isNotEmpty ? artistName[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                    color: Color(0x44FFFFFF),
-                    fontSize: 80,
-                    fontWeight: FontWeight.w900,
+    return SizedBox(
+      height: heroHeight,
+      width: double.infinity,
+      child: Stack(
+        children: [
+          // Full-bleed image — crisp at 800px on any retina screen
+          Positioned.fill(
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+              placeholder: (_, _) => const ColoredBox(color: Color(0xFF0D0D1A)),
+              errorWidget: (_, _, _) => ColoredBox(
+                color: const Color(0xFF0D0D1A),
+                child: Center(
+                  child: Text(
+                    artistName.isNotEmpty ? artistName[0].toUpperCase() : '?',
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(0x1A),
+                      fontSize: heroHeight * 0.42,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-        // Top darkening so the back button stays readable
-        Positioned(
-          top: 0, left: 0, right: 0,
-          child: SizedBox(
-            height: 90,
-            child: DecoratedBox(
+          // Top vignette so back button stays readable over any image
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: Container(
+              height: 100,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.black.withAlpha(0x88), Colors.transparent],
-                  stops: const [0.0, 1.0],
+                  colors: [Colors.black.withAlpha(0x77), Colors.transparent],
                 ),
               ),
             ),
           ),
-        ),
-        // Bottom fade into page background
-        Positioned(
-          bottom: 0, left: 0, right: 0,
-          child: SizedBox(
-            height: heroHeight * 0.5,
-            child: const DecoratedBox(
+          // Bottom gradient: transitions through the palette vibrant color into
+          // the page background for a cohesive, colour-matched fade
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: Container(
+              height: heroHeight * 0.65,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Color(0xFF06060F)],
+                  colors: [
+                    Colors.transparent,
+                    Color.lerp(palette.darkVibrant, const Color(0xFF06060F), 0.35)!
+                        .withAlpha(0xDD),
+                    const Color(0xFF06060F),
+                  ],
+                  stops: const [0.0, 0.6, 1.0],
                 ),
               ),
             ),
           ),
-        ),
-      ],
+          // Artist name + count overlaid at the bottom
+          Positioned(
+            bottom: 22, left: 20, right: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  artistName,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 40,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -1.0,
+                    height: 1.0,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withAlpha(0xAA),
+                        blurRadius: 20,
+                      ),
+                    ],
+                  ),
+                ),
+                if (albumCount > 0) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    '$albumCount ${albumCount == 1 ? 'album' : 'albums'}',
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(0x77),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
