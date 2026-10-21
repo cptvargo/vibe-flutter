@@ -113,21 +113,22 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _userPaused = false;
   bool get userPaused => _userPaused;
 
-  // ── Sleep timer ──────────────────────────────────────────────────────────
-  DateTime? _sleepAt; // null = off
-  final _sleepCtrl = StreamController<Duration?>.broadcast();
-  Stream<Duration?> get sleepRemainingStream => _sleepCtrl.stream;
-  Duration? get sleepRemaining {
-    if (_sleepAt == null) return null;
-    final r = _sleepAt!.difference(DateTime.now());
-    return r.isNegative ? Duration.zero : r;
-  }
+  // ── Sleep timer (implemented, UI not yet added) ──────────────────────────
+  // TODO: add a sleep timer button to the player screen before shipping this.
+  // DateTime? _sleepAt; // null = off
+  // final _sleepCtrl = StreamController<Duration?>.broadcast();
+  // Stream<Duration?> get sleepRemainingStream => _sleepCtrl.stream;
+  // Duration? get sleepRemaining {
+  //   if (_sleepAt == null) return null;
+  //   final r = _sleepAt!.difference(DateTime.now());
+  //   return r.isNegative ? Duration.zero : r;
+  // }
 
-  // minutes == 0 cancels the timer.
-  void setSleepTimer(int minutes) {
-    _sleepAt = minutes > 0 ? DateTime.now().add(Duration(minutes: minutes)) : null;
-    _sleepCtrl.add(sleepRemaining);
-  }
+  // // minutes == 0 cancels the timer.
+  // void setSleepTimer(int minutes) {
+  //   _sleepAt = minutes > 0 ? DateTime.now().add(Duration(minutes: minutes)) : null;
+  //   _sleepCtrl.add(sleepRemaining);
+  // }
 
   // ── Playback mode / crossfade config ────────────────────────────────────
   PlaybackMode _mode        = PlaybackMode.crossfade;
@@ -216,7 +217,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _positionCtrl.add(pos);
       _onPrimaryPosition(pos);
       _maybeSaveSession(pos);
-      _tickSleepTimer();
+      // _tickSleepTimer(); // dormant until sleep timer UI is added
     });
 
     _durSub = _primary.durationStream.listen((dur) {
@@ -313,24 +314,24 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  // ── Sleep timer tick ─────────────────────────────────────────────────────
-  int _lastSleepBroadcastSec = -1;
+  // ── Sleep timer tick (dormant until UI is added) ─────────────────────────
+  // int _lastSleepBroadcastSec = -1;
 
-  void _tickSleepTimer() {
-    if (_sleepAt == null) return;
-    final remaining = sleepRemaining!;
-    // Broadcast an update at most once per second to keep the countdown UI smooth.
-    final sec = remaining.inSeconds;
-    if (sec != _lastSleepBroadcastSec) {
-      _lastSleepBroadcastSec = sec;
-      _sleepCtrl.add(remaining);
-    }
-    if (remaining == Duration.zero) {
-      _sleepAt = null;
-      _userPaused = true; // treat as explicit pause so BT reconnect won't resume
-      _primary.pause();
-    }
-  }
+  // void _tickSleepTimer() {
+  //   if (_sleepAt == null) return;
+  //   final remaining = sleepRemaining!;
+  //   // Broadcast an update at most once per second to keep the countdown UI smooth.
+  //   final sec = remaining.inSeconds;
+  //   if (sec != _lastSleepBroadcastSec) {
+  //     _lastSleepBroadcastSec = sec;
+  //     _sleepCtrl.add(remaining);
+  //   }
+  //   if (remaining == Duration.zero) {
+  //     _sleepAt = null;
+  //     _userPaused = true; // treat as explicit pause so BT reconnect won't resume
+  //     _primary.pause();
+  //   }
+  // }
 
   // ── Position-driven crossfade trigger ────────────────────────────────────
   // Runs on every primary position tick (suppressed during crossfade).
@@ -704,8 +705,8 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // switching albums doesn't lose the in-progress session.
     _saveAlbumSession(_primary.position);
     _userPaused = false; // new queue = new intent to play
-    _sleepAt    = null;  // explicit play always cancels any sleep timer
-    _sleepCtrl.add(null);
+    // _sleepAt    = null;  // explicit play always cancels any sleep timer (dormant)
+    // _sleepCtrl.add(null);
     _cancelGap();
     _naturalEndQueued = false;
     ++_skipGen; // cancel any pending enqueued skip
