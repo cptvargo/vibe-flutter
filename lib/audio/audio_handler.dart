@@ -603,10 +603,11 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
         ? Uri.file(localPath).toString()
         : (item.extras?['url'] as String? ?? '');
     try {
-      await _primary.stop();
-      // Immediately reset the position so the on-phone timer and car/BT
-      // MediaSession display both show 0:00 instead of holding the
-      // end-of-track value until just_audio's periodic ticker fires.
+      // Do NOT call stop() before setAudioSource — this is the ExoPlayer/YTM
+      // pattern. stop() emits idle, which audio_service forwards to iOS and
+      // deactivates the AVAudioSession. setAudioSource() on a live player
+      // transitions directly to loading without emitting idle, keeping the
+      // session alive for the duration of the stop→load→play transition.
       _positionCtrl.add(Duration.zero);
       playbackState.add(playbackState.value.copyWith(
         updatePosition: Duration.zero,
@@ -713,7 +714,6 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _currentIdxCtrl.add(_queueIdx);
       _saveCurrentItem(item);
 
-      await _primary.stop();
       await _primary.setVolume(_gainVolumeFor(item));
       try {
         await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
