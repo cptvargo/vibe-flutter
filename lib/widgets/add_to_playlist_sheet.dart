@@ -72,17 +72,17 @@ class _AddToPlaylistSheetState extends State<AddToPlaylistSheet> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
 
-    return SafeArea(
-      child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.72,
-        ),
-        decoration: const BoxDecoration(
-          color:        Color(0xFF12121E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.72,
+      ),
+      decoration: const BoxDecoration(
+        color:        Color(0xFF12121E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
           children: [
             // Handle
             Container(
@@ -143,7 +143,7 @@ class _AddToPlaylistSheetState extends State<AddToPlaylistSheet> {
               Flexible(
                 child: ListView.separated(
                   shrinkWrap: true,
-                  padding:    const EdgeInsets.only(bottom: 12),
+                  padding:    EdgeInsets.only(bottom: 12 + bottomInset),
                   itemCount:  _playlists.length,
                   separatorBuilder: (_, _) =>
                       const Divider(height: 1, color: Color(0x0DFFFFFF)),

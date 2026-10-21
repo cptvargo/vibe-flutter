@@ -72,7 +72,8 @@ class _CreatePlaylistSheetState extends State<CreatePlaylistSheet> {
       ),
       padding: EdgeInsets.only(
         left:   24, right: 24, top: 12,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 28,
+        bottom: MediaQuery.of(context).viewInsets.bottom +
+                MediaQuery.viewPaddingOf(context).bottom + 28,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

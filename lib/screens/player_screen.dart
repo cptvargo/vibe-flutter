@@ -52,68 +52,70 @@ void _showTrackOptions(
     context: context,
     backgroundColor: Colors.transparent,
     useRootNavigator: false,
-    builder: (sheetCtx) => Container(
-      decoration: BoxDecoration(
-        color: theme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            width: 40, height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(0x44),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          if (albumId != null)
-            ListTile(
-              leading: SvgPicture.string(
-                _kAlbumSvg,
-                width: 24, height: 24,
-                colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+    builder: (sheetCtx) {
+      final bottomInset = MediaQuery.viewPaddingOf(sheetCtx).bottom;
+      return Container(
+        decoration: BoxDecoration(
+          color: theme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.only(top: 8, bottom: 8 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(0x44),
+                borderRadius: BorderRadius.circular(2),
               ),
-              title: Text('Go to Album', style: TextStyle(color: theme.textColor)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                ref.read(playerOpenProvider.notifier).state = false;
-                router.go(
-                  '/album/$albumId'
-                  '?name=${Uri.encodeComponent(item.album ?? '')}'
-                  '&artist=${Uri.encodeComponent(item.artist ?? '')}',
-                );
-              },
             ),
-          if (item.artist != null && item.artist!.isNotEmpty)
-            ListTile(
-              leading: SvgPicture.string(
-                _kArtistSvg,
-                width: 24, height: 24,
-                colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
-              ),
-              title: Text('Go to Artist', style: TextStyle(color: theme.textColor)),
-              onTap: () async {
-                Navigator.pop(sheetCtx);
-                ref.read(playerOpenProvider.notifier).state = false;
-                final albumArtist = item.extras?['albumArtist'] as String?
-                    ?? item.artist?.split(' & ').first
-                    ?? '';
-                String? id = artistId ?? await JellyfinApi.getArtistIdByName(albumArtist);
-                if (id != null) {
+            if (albumId != null)
+              ListTile(
+                leading: SvgPicture.string(
+                  _kAlbumSvg,
+                  width: 24, height: 24,
+                  colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+                ),
+                title: Text('Go to Album', style: TextStyle(color: theme.textColor)),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  ref.read(playerOpenProvider.notifier).state = false;
                   router.go(
-                    '/artist/$id'
-                    '?name=${Uri.encodeComponent(albumArtist)}',
+                    '/album/$albumId'
+                    '?name=${Uri.encodeComponent(item.album ?? '')}'
+                    '&artist=${Uri.encodeComponent(item.artist ?? '')}',
                   );
-                }
-              },
-            ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    ),
+                },
+              ),
+            if (item.artist != null && item.artist!.isNotEmpty)
+              ListTile(
+                leading: SvgPicture.string(
+                  _kArtistSvg,
+                  width: 24, height: 24,
+                  colorFilter: ColorFilter.mode(theme.accentBright, BlendMode.srcIn),
+                ),
+                title: Text('Go to Artist', style: TextStyle(color: theme.textColor)),
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  ref.read(playerOpenProvider.notifier).state = false;
+                  final albumArtist = item.extras?['albumArtist'] as String?
+                      ?? item.artist?.split(' & ').first
+                      ?? '';
+                  String? id = artistId ?? await JellyfinApi.getArtistIdByName(albumArtist);
+                  if (id != null) {
+                    router.go(
+                      '/artist/$id'
+                      '?name=${Uri.encodeComponent(albumArtist)}',
+                    );
+                  }
+                },
+              ),
+          ],
+        ),
+      );
+    },
   );
 }
 

@@ -1073,14 +1073,14 @@ class _AlbumTrackMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Container(
-        decoration: const BoxDecoration(
-          color:        Color(0xFF12121E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color:        Color(0xFF12121E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(top: 8, bottom: 8 + bottomInset),
+      child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
