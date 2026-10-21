@@ -157,6 +157,15 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   // Suppresses spurious state events during source loads.
   bool _loading = false;
 
+  // ── Serial operation queue ────────────────────────────────────────────────
+  // All state-mutating commands are serialised here so they can never run
+  // concurrently.  This mirrors the Plexamp TaskQueue pattern: every public
+  // command is pushed onto the chain and only executes after the prior one
+  // has fully completed.
+  Future<void> _opQueue     = Future.value();
+  int          _skipGen     = 0;     // incremented on every user-initiated skip
+  bool         _naturalEndQueued = false; // prevents double-enqueue of natural end
+
   // Deduplicates Jellyfin 10-second progress pings.
   int _lastReportedSec = -1;
 
@@ -171,6 +180,24 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     final gainDb = item.extras?['normalizationGain'] as double?;
     if (gainDb == null) return 1.0;
     return (pow(10.0, gainDb / 20.0) as double).clamp(0.0, 1.0);
+  }
+
+  // ── Serial queue helpers ──────────────────────────────────────────────────
+  // _enqueue: chain op onto _opQueue.  Prior errors are swallowed so a single
+  // failing op never permanently breaks the chain.
+  Future<void> _enqueue(Future<void> Function() op) =>
+      _opQueue = _opQueue.then((_) => op(), onError: (_) => op());
+
+  // _enqueueSkip: same as _enqueue but captures a generation number.
+  // If another skip arrives before this one runs, the generation changes and
+  // this op becomes a no-op — equivalent to Plexamp's TaskQueue.cancelTasks().
+  Future<void> _enqueueSkip(Future<void> Function() op) {
+    final gen = ++_skipGen;
+    _naturalEndQueued = false; // a skip supersedes any pending natural-end
+    return _opQueue = _opQueue.then(
+      (_) async { if (_skipGen == gen) await op(); },
+      onError: (_) async { if (_skipGen == gen) await op(); },
+    );
   }
 
   // ── Wire all listeners to the current primary player ─────────────────────
@@ -237,17 +264,27 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_crossfading && state.processingState == ProcessingState.idle) return;
 
     playbackState.add(playbackState.value.copyWith(
+      // 5-button layout: prev | ⟪10s | play/pause | 10s⟫ | next
+      // Compact view (notification shade, lock screen) shows indices 0, 2, 4
+      // so the user gets prev | play/pause | next — same as before.
+      // Expanded notification shows all 5, matching YTM's layout.
       controls: [
         MediaControl.skipToPrevious,
+        MediaControl.rewind,
         state.playing ? MediaControl.pause : MediaControl.play,
+        MediaControl.fastForward,
         MediaControl.skipToNext,
       ],
       systemActions: const {
         MediaAction.seek,
         MediaAction.seekForward,
         MediaAction.seekBackward,
+        MediaAction.skipToNext,
+        MediaAction.skipToPrevious,
+        MediaAction.setRepeatMode,
+        MediaAction.setShuffleMode,
       },
-      androidCompactActionIndices: const [0, 1, 2],
+      androidCompactActionIndices: const [0, 2, 4],
       processingState: switch (state.processingState) {
         ProcessingState.idle      => AudioProcessingState.idle,
         ProcessingState.loading   => AudioProcessingState.loading,
@@ -264,8 +301,16 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // Natural end of track — only act if NOT mid-crossfade.
     // During crossfade the primary is faded to 0 and stopped manually; any
     // completed events it emits before the stop are intentionally ignored.
+    // Guard with _naturalEndQueued so rapid completed events don't double-enqueue.
     if (state.processingState == ProcessingState.completed && !_crossfading) {
-      _onTrackNaturalEnd();
+      if (!_naturalEndQueued) {
+        _naturalEndQueued = true;
+        _enqueue(() async {
+          if (!_naturalEndQueued) return; // cancelled by a skip
+          _naturalEndQueued = false;
+          await _onTrackNaturalEnd();
+        });
+      }
     }
   }
 
@@ -514,7 +559,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _inGap        = false;
       _gapTargetIdx = null;
       if (nextIdx >= 0 && nextIdx < _queue.length) {
-        _hardSkipTo(nextIdx);
+        _enqueue(() => _hardSkipTo(nextIdx));
       }
     });
   }
@@ -528,6 +573,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ── Hard skip (immediate cut, no fade) ───────────────────────────────────
   Future<void> _hardSkipTo(int index) async {
+    _naturalEndQueued = false; // skip supersedes any pending natural-end
     _loading = true; // set before cancel so position ticks during cancel are suppressed
     await _cancelCrossfade();
 
@@ -547,6 +593,13 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
         : (item.extras?['url'] as String? ?? '');
     try {
       await _primary.stop();
+      // Immediately reset the position so the on-phone timer and car/BT
+      // MediaSession display both show 0:00 instead of holding the
+      // end-of-track value until just_audio's periodic ticker fires.
+      _positionCtrl.add(Duration.zero);
+      playbackState.add(playbackState.value.copyWith(
+        updatePosition: Duration.zero,
+      ));
       await _primary.setVolume(_gainVolumeFor(item));
       await _primary.setAudioSource(
           AudioSource.uri(Uri.parse(url), tag: item));
@@ -621,7 +674,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     int startIndex = 0,
     int startPositionMs = 0,
     String playbackContext = 'album',
-  }) async {
+  }) {
     // Snapshot the current album's progress before the queue is replaced so
     // switching albums doesn't lose the in-progress session.
     _saveAlbumSession(_primary.position);
@@ -629,47 +682,51 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _sleepAt    = null;  // explicit play always cancels any sleep timer
     _sleepCtrl.add(null);
     _cancelGap();
-    _loading = true; // set before cancel so position ticks during cancel are suppressed
-    await _cancelCrossfade();
-    _reportStopped();
+    _naturalEndQueued = false;
+    ++_skipGen; // cancel any pending enqueued skip
+    return _enqueue(() async {
+      _loading = true; // set before cancel so position ticks during cancel are suppressed
+      await _cancelCrossfade();
+      _reportStopped();
 
-    _queue           = tracks.map((t) => _toMediaItem(t, playbackContext: playbackContext)).toList();
-    _queueIdx        = startIndex.clamp(0, _queue.length - 1);
-    _lastReportedSec = -1;
+      _queue           = tracks.map((t) => _toMediaItem(t, playbackContext: playbackContext)).toList();
+      _queueIdx        = startIndex.clamp(0, _queue.length - 1);
+      _lastReportedSec = -1;
 
-    final item = _queue[_queueIdx];
-    final url  = item.extras?['url'] as String? ?? '';
+      final item = _queue[_queueIdx];
+      final url  = item.extras?['url'] as String? ?? '';
 
-    queue.add(List.unmodifiable(_queue));
-    mediaItem.add(item);
-    _currentIdxCtrl.add(_queueIdx);
-    _saveCurrentItem(item);
+      queue.add(List.unmodifiable(_queue));
+      mediaItem.add(item);
+      _currentIdxCtrl.add(_queueIdx);
+      _saveCurrentItem(item);
 
-    await _primary.stop();
-    await _primary.setVolume(_gainVolumeFor(item));
-    try {
-      await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
-      if (startPositionMs > 0) {
-        await _primary.seek(Duration(milliseconds: startPositionMs));
+      await _primary.stop();
+      await _primary.setVolume(_gainVolumeFor(item));
+      try {
+        await _primary.setAudioSource(AudioSource.uri(Uri.parse(url), tag: item));
+        if (startPositionMs > 0) {
+          await _primary.seek(Duration(milliseconds: startPositionMs));
+        }
+      } catch (_) {
+        _loading = false;
+        return;
       }
-    } catch (_) {
-      _loading = false;
-      return;
-    }
 
-    _reportStarted(item.id);
-    _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
+      _reportStarted(item.id);
+      _primary.play(); // _loading cleared by _onPrimaryState on first playing:true
 
-    // When playing a single track outside an album, auto-fill the queue.
-    // ViBE Out uses a pure random fill; other contexts use InstantMix.
-    if (tracks.length == 1 && playbackContext != 'album') {
-      final seed = tracks[startIndex.clamp(0, tracks.length - 1)];
-      if (playbackContext == 'vibe_out') {
-        _autoFillWithRandomTracks(seed);
-      } else {
-        _autoFillWithInstantMix(seed);
+      // When playing a single track outside an album, auto-fill the queue.
+      // ViBE Out uses a pure random fill; other contexts use InstantMix.
+      if (tracks.length == 1 && playbackContext != 'album') {
+        final seed = tracks[startIndex.clamp(0, tracks.length - 1)];
+        if (playbackContext == 'vibe_out') {
+          _autoFillWithRandomTracks(seed);
+        } else {
+          _autoFillWithInstantMix(seed);
+        }
       }
-    }
+    });
   }
 
   Future<void> _autoFillWithInstantMix(VibeTrack seed) async {
@@ -769,7 +826,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     if (mode != PlaybackMode.none && _inGap) {
       final target = _gapTargetIdx;
       _cancelGap();
-      if (target != null) _hardSkipTo(target); // fire-and-forget, guarded internally
+      if (target != null) _enqueue(() => _hardSkipTo(target));
     }
   }
 
@@ -842,11 +899,15 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> stop() async {
+  Future<void> stop() {
     _cancelGap();
-    await _cancelCrossfade();
-    _reportStopped();
-    return _primary.stop();
+    _naturalEndQueued = false;
+    ++_skipGen;
+    return _enqueue(() async {
+      await _cancelCrossfade();
+      _reportStopped();
+      await _primary.stop();
+    });
   }
 
   @override Future<void> seek(Duration position) => _primary.seek(position);
@@ -854,42 +915,46 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> setVolume(double volume) => _primary.setVolume(volume.clamp(0.0, 1.0));
 
   @override
-  Future<void> skipToNext() async {
+  Future<void> skipToNext() {
     _cancelGap();
     // During a crossfade _queueIdx is already the incoming track, so _nextIndex
     // correctly resolves to the track after it — no special-case needed.
-    final next = _nextIndex;
-    if (next == null) return;
-    await _hardSkipTo(next);
+    return _enqueueSkip(() async {
+      final next = _nextIndex;
+      if (next == null) return;
+      await _hardSkipTo(next);
+    });
   }
 
   @override
-  Future<void> skipToPrevious() async {
+  Future<void> skipToPrevious() {
     _cancelGap();
-    if (_crossfading) {
-      // During a crossfade the user sees the secondary (incoming) track.
-      // Mirror the normal ">3 s → restart / ≤3 s → go back" logic against secondary.
-      if (_secondary.position.inSeconds > 3) {
-        await _hardSkipTo(_queueIdx); // restart the incoming track from 0
-      } else {
-        final prev = _prevIndex; // _queueIdx is already at N+1, so prev = N
-        if (prev != null) await _hardSkipTo(prev);
+    return _enqueueSkip(() async {
+      if (_crossfading) {
+        // During a crossfade the user sees the secondary (incoming) track.
+        // Mirror the normal ">3 s → restart / ≤3 s → go back" logic against secondary.
+        if (_secondary.position.inSeconds > 3) {
+          await _hardSkipTo(_queueIdx); // restart the incoming track from 0
+        } else {
+          final prev = _prevIndex; // _queueIdx is already at N+1, so prev = N
+          if (prev != null) await _hardSkipTo(prev);
+        }
+        return;
       }
-      return;
-    }
-    if (_primary.position.inSeconds > 3) {
-      await _primary.seek(Duration.zero);
-      return;
-    }
-    final prev = _prevIndex;
-    if (prev != null) await _hardSkipTo(prev);
+      if (_primary.position.inSeconds > 3) {
+        await _primary.seek(Duration.zero);
+        return;
+      }
+      final prev = _prevIndex;
+      if (prev != null) await _hardSkipTo(prev);
+    });
   }
 
   @override
-  Future<void> skipToQueueItem(int index) async {
+  Future<void> skipToQueueItem(int index) {
     _cancelGap();
-    if (index < 0 || index >= _queue.length) return;
-    await _hardSkipTo(index);
+    if (index < 0 || index >= _queue.length) return Future.value();
+    return _enqueueSkip(() => _hardSkipTo(index));
   }
 
   @override
@@ -901,6 +966,14 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _                           => LoopMode.off,
     };
     _loopModeCtrl.add(_loopMode);
+    // Mirror repeat state into the MediaSession so the car dashboard reflects it
+    // and the car's steering-wheel repeat button gets confirmation feedback.
+    playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
+    // Persist so repeat state survives process kills (car stop, OOM).
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('vibe_repeat_v1', repeatMode.index);
+    } catch (_) {}
     // LoopMode is managed here in Dart, not by the AudioPlayer, so we do not
     // call _primary.setLoopMode(). _nextIndex handles all loop logic.
   }

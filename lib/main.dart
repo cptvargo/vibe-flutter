@@ -73,6 +73,16 @@ Future<void> main() async {
       androidNotificationChannelName: 'Vibe',
       androidNotificationOngoing:     false,
       androidStopForegroundOnPause:   true,
+      // Download artwork so it appears in the notification and lock screen.
+      // Without this audio_service skips the art fetch and shows a blank square.
+      preloadArtwork:      true,
+      artDownscaleWidth:   512,
+      artDownscaleHeight:  512,
+      // Brand tint for the notification header and action icons.
+      notificationColor: const Color(0xFF7C3AED),
+      // ±10 s seek intervals used by the rewind/fastForward notification buttons.
+      rewindInterval:      const Duration(seconds: 10),
+      fastForwardInterval: const Duration(seconds: 10),
     ),
   );
 
@@ -91,6 +101,12 @@ Future<void> main() async {
   // Restore shuffle preference saved before last process kill (car stop, OOM).
   if (prefs.getBool('vibe_shuffle_v1') == true) {
     await handler.setShuffleMode(AudioServiceShuffleMode.all);
+  }
+
+  // Restore repeat mode preference saved before last process kill (car stop, OOM).
+  final repeatIdx = prefs.getInt('vibe_repeat_v1') ?? 0;
+  if (repeatIdx > 0 && repeatIdx < AudioServiceRepeatMode.values.length) {
+    await handler.setRepeatMode(AudioServiceRepeatMode.values[repeatIdx]);
   }
 
   // Auto-resume when a Bluetooth output device connects — covers car stereo

@@ -48,6 +48,21 @@
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>
+            <!-- Always reserve space for skip buttons in Android Auto and car
+                 media browsers — prevents them from being dropped when the
+                 compact action slots are full. -->
+            <meta-data
+                android:name="com.google.android.gms.car.media.ALWAYS_RESERVE_SPACE_FOR.ACTION_SKIP_TO_NEXT"
+                android:value="true"/>
+            <meta-data
+                android:name="com.google.android.gms.car.media.ALWAYS_RESERVE_SPACE_FOR.ACTION_SKIP_TO_PREVIOUS"
+                android:value="true"/>
+            <meta-data
+                android:name="android.media.playback.ALWAYS_RESERVE_SPACE_FOR.ACTION_SKIP_TO_NEXT"
+                android:value="true"/>
+            <meta-data
+                android:name="android.media.playback.ALWAYS_RESERVE_SPACE_FOR.ACTION_SKIP_TO_PREVIOUS"
+                android:value="true"/>
         </service>
 
         <!-- audio_service: media button receiver (headset controls, lock screen) -->

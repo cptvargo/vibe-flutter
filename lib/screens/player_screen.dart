@@ -944,12 +944,12 @@ class _ContentState extends ConsumerState<_Content> {
                     children: [
                       _PlainIconButton(
                         icon: Icons.skip_previous_rounded,
-                        iconSize: 30,
+                        iconSize: 36,
                         inactiveColor: Colors.white,
                         activeColor: ambient.waveformActive,
                         onTap: handler.skipToPrevious,
                       ),
-                      const SizedBox(width: 28),
+                      const SizedBox(width: 20),
                       _GlassTransportButton(
                         icon: Icons.play_arrow_rounded,
                         size: 72, iconSize: 34,
@@ -958,10 +958,10 @@ class _ContentState extends ConsumerState<_Content> {
                         customIcon: isPlaying ? const _ThinPauseIcon(height: 20) : null,
                         onTap: () => isPlaying ? handler.pause() : handler.play(),
                       ),
-                      const SizedBox(width: 28),
+                      const SizedBox(width: 20),
                       _PlainIconButton(
                         icon: Icons.skip_next_rounded,
-                        iconSize: 30,
+                        iconSize: 36,
                         inactiveColor: Colors.white,
                         activeColor: ambient.waveformActive,
                         onTap: handler.skipToNext,
@@ -1608,13 +1608,10 @@ class _GlassTransportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color dark = Color.lerp(palette.core, Colors.black, 0.42)!;
-
-    final int gA1 = (0x55 * intensity).round().clamp(0, 255);
-    final int gA2 = (0x33 * intensity).round().clamp(0, 255);
-    final int gA3 = (0x1A * intensity).round().clamp(0, 255);
-
-    final double gradSize = size * 0.62;
+    final Color fillTop = Color.lerp(palette.core, Colors.white, 0.18)!;
+    final Color fillBot = Color.lerp(palette.core, Colors.black, 0.32)!;
+    final int   glowA   = (0x60 * intensity).round().clamp(0, 255);
+    final double circleSize = size * 0.80;
 
     return GestureDetector(
       onTap: onTap,
@@ -1624,71 +1621,31 @@ class _GlassTransportButton extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
+            // Single clean ambient glow
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.transparent,
                   boxShadow: [
                     BoxShadow(
-                      color: palette.core.withAlpha(gA1),
-                      blurRadius: 34 * intensity,
-                      spreadRadius: 2  * intensity,
-                    ),
-                    BoxShadow(
-                      color: palette.mid.withAlpha(gA2),
-                      blurRadius: 72  * intensity,
-                      spreadRadius: 12 * intensity,
-                    ),
-                    BoxShadow(
-                      color: palette.highlight.withAlpha(gA3),
-                      blurRadius: 120 * intensity,
-                      spreadRadius: 26 * intensity,
+                      color: palette.core.withAlpha(glowA),
+                      blurRadius: 32 * intensity,
+                      spreadRadius: 0,
                     ),
                   ],
                 ),
               ),
             ),
+            // Solid circle with clean top-to-bottom gradient
             SizedBox(
-              width: gradSize, height: gradSize,
+              width: circleSize, height: circleSize,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
-                    begin: const Alignment(-0.9, -0.9),
-                    end:   const Alignment( 0.9,  0.9),
-                    colors: [palette.highlight, palette.core, dark],
-                    stops: const [0.0, 0.46, 1.0],
-                  ),
-                ),
-              ),
-            ),
-            IgnorePointer(
-              child: SizedBox(
-                width: gradSize, height: gradSize,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      radius: 0.60,
-                      colors: [Colors.white.withAlpha(0x38), Colors.transparent],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            IgnorePointer(
-              child: SizedBox(
-                width: gradSize, height: gradSize,
-                child: const DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end:   Alignment.bottomCenter,
-                      colors: [Colors.transparent, Color(0x44000000)],
-                      stops: [0.45, 1.0],
-                    ),
+                    begin: Alignment.topCenter,
+                    end:   Alignment.bottomCenter,
+                    colors: [fillTop, fillBot],
                   ),
                 ),
               ),
