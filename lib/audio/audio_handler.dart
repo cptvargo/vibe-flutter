@@ -246,11 +246,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       if (state.playing) {
         _loading = false; // first playing:true → resume forwarding
       } else if (state.processingState == ProcessingState.idle) {
-        // The stop() called inside _hardSkipTo emits idle here.  Clear the
-        // flag so the UI doesn't freeze, but do NOT forward idle to
-        // audio_service — that would signal iOS the session ended and stale
-        // the lock-screen transport controls before the new track starts.
-        _loading = false;
+        // Suppress idle during the stop→setAudioSource→play sequence.
+        // Do NOT clear _loading here: setAudioSource also transitions through
+        // idle internally, and with _loading=false that second idle would fall
+        // through to playbackState.add(idle), which deactivates the iOS audio
+        // session — leaving the player in a "playing but silent" state.
+        // _loading is cleared only when playing:true arrives (the line above).
         return;
       } else {
         return;
