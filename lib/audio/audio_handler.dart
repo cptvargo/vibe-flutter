@@ -270,9 +270,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       // Expanded notification shows all 5, matching YTM's layout.
       controls: [
         MediaControl.skipToPrevious,
-        MediaControl.rewind,
         state.playing ? MediaControl.pause : MediaControl.play,
-        MediaControl.fastForward,
         MediaControl.skipToNext,
       ],
       systemActions: const {
@@ -284,7 +282,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
         MediaAction.setRepeatMode,
         MediaAction.setShuffleMode,
       },
-      androidCompactActionIndices: const [0, 2, 4],
+      androidCompactActionIndices: const [0, 1, 2],
       processingState: switch (state.processingState) {
         ProcessingState.idle      => AudioProcessingState.idle,
         ProcessingState.loading   => AudioProcessingState.loading,
