@@ -57,7 +57,7 @@ class AmbientTheme {
         playButtonGlow:   light.withAlpha(0xCC),
         rimColor:         Colors.white.withAlpha(0x55),
         waveformActive:   Colors.white,
-        waveformInactive: Colors.white.withAlpha(0x28),
+        waveformInactive: Colors.white.withAlpha(0x55),
         waveformAnchor:   anchor,
         waveformTail:     tail,
         glowScale:        0.0,

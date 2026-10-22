@@ -156,7 +156,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   StreamSubscription<Duration?>?   _durSub;
 
   // Suppresses spurious state events during source loads.
-  bool _loading = false;
+  bool _loading    = false;
+  // True from the moment _loading is cleared (new source playing:true) until the
+  // first position tick arrives.  Guards against the prior source's completed event
+  // firing in the brief window after _loading=false — a race that causes every
+  // track to auto-skip without this protection.
+  bool _justLoaded = false;
 
   // ── Serial operation queue ────────────────────────────────────────────────
   // All state-mutating commands are serialised here so they can never run
@@ -245,7 +250,11 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       // This prevents the play button from flashing to "play" during the
       // stop→setAudioSource→play gap in _hardSkipTo / playTracks.
       if (state.playing) {
-        _loading = false; // first playing:true → resume forwarding
+        _loading    = false; // first playing:true → resume forwarding
+        // Windows/WMF fires stale completed events from the prior source after
+        // _loading is cleared.  Arm the guard only on Windows — iOS/Android
+        // don't exhibit this race and are left completely unmodified.
+        if (Platform.isWindows) _justLoaded = true;
       } else if (state.processingState == ProcessingState.idle) {
         // Suppress idle during the stop→setAudioSource→play sequence.
         // Do NOT clear _loading here: setAudioSource also transitions through
@@ -302,7 +311,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     // During crossfade the primary is faded to 0 and stopped manually; any
     // completed events it emits before the stop are intentionally ignored.
     // Guard with _naturalEndQueued so rapid completed events don't double-enqueue.
+    // Also guard with _justLoaded: without stop() before setAudioSource the prior
+    // source can fire completed immediately after _loading is cleared by the new
+    // source's playing:true — _justLoaded stays true until the first position tick
+    // so that stale event is swallowed before it triggers an unwanted skip.
     if (state.processingState == ProcessingState.completed && !_crossfading) {
+      if (_justLoaded) return;
       if (!_naturalEndQueued) {
         _naturalEndQueued = true;
         _enqueue(() async {
@@ -339,6 +353,10 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   //   (crossfadeSec + 5) s before end  →  preload secondary into buffer
   //   crossfadeSec before end           →  begin fade
   void _onPrimaryPosition(Duration pos) {
+    // First position tick after a new source starts: clear the post-load guard.
+    // Only do this when not loading — during the load phase position events still
+    // arrive but _loading hasn't been cleared yet, so we must not reset prematurely.
+    if (_justLoaded && !_loading) _justLoaded = false;
     if (_loading || _crossfading) return;
 
     // Jellyfin progress ping every 10 seconds, deduplicated.

@@ -72,6 +72,16 @@ class _MainShellState extends ConsumerState<MainShell> {
     final handler = ref.read(audioHandlerProvider);
     _mediaSub = handler.mediaItem.listen((item) async {
       if (!mounted || item == null) return;
+
+      // Instant bootstrap: decode the BlurHash DC component (average color) so
+      // the player shows a close approximation of the album color immediately,
+      // before the network palette extraction completes.
+      final blurHash  = item.extras?['blurHash'] as String?;
+      final bootstrap = PaletteService.fromBlurHash(blurHash);
+      if (bootstrap != null && mounted) {
+        ref.read(paletteProvider.notifier).state = bootstrap;
+      }
+
       final colorUrl = item.extras?['colorUrl'] as String?;
       if (colorUrl == null || colorUrl.isEmpty) return;
       final palette = await PaletteService.extractFromUrl(colorUrl, item.id);

@@ -73,11 +73,11 @@ Future<void> main() async {
       androidNotificationChannelName: 'Vibe',
       androidNotificationOngoing:     false,
       androidStopForegroundOnPause:   true,
-      // Download artwork so it appears in the notification and lock screen.
-      // Without this audio_service skips the art fetch and shows a blank square.
-      preloadArtwork:      true,
-      artDownscaleWidth:   512,
-      artDownscaleHeight:  512,
+      // Android needs Flutter to pre-fetch artwork for the notification; iOS
+      // downloads it natively from artUri — preloadArtwork on iOS breaks that.
+      preloadArtwork:    Platform.isAndroid,
+      artDownscaleWidth:  512,
+      artDownscaleHeight: 512,
       // Brand tint for the notification header and action icons.
       notificationColor: const Color(0xFF7C3AED),
       // ±10 s seek intervals used by the rewind/fastForward notification buttons.

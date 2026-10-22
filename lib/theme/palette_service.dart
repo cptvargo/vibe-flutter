@@ -1,3 +1,4 @@
+import 'dart:math' show pow;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -47,6 +48,39 @@ class PaletteService {
     if (_box?.containsKey(cacheKey) == true) return;
     await extractFromUrl(colorUrl, cacheKey);
   }
+
+  // Decode the DC (average) component of a BlurHash string into a dominant color,
+  // then synthesize a full VibePalette from it. Returns null if the hash is missing
+  // or malformed. Used to show the right hue instantly before extractFromUrl completes.
+  static VibePalette? fromBlurHash(String? blurHash) {
+    if (blurHash == null || blurHash.length < 6) return null;
+    try {
+      const chars =
+          '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+          r'#$%*+,-./:;=?@[]^_{|}~';
+      int decode83(String s) {
+        var val = 0;
+        for (final rune in s.runes) {
+          final idx = chars.indexOf(String.fromCharCode(rune));
+          if (idx < 0) return 0;
+          val = val * 83 + idx;
+        }
+        return val;
+      }
+      // BlurHash DC channels are in linear light; convert to sRGB before use.
+      double toSrgb(int linearByte) {
+        final c = linearByte / 255.0;
+        return c <= 0.0031308 ? c * 12.92 : 1.055 * (pow(c, 1.0 / 2.4) as double) - 0.055;
+      }
+      final dc = decode83(blurHash.substring(2, 6));
+      final r  = (toSrgb((dc >> 16) & 0xff) * 255).round().clamp(0, 255);
+      final g  = (toSrgb((dc >> 8)  & 0xff) * 255).round().clamp(0, 255);
+      final b  = (toSrgb(dc         & 0xff) * 255).round().clamp(0, 255);
+      return VibePalette.fromDominantColor(Color.fromARGB(255, r, g, b));
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 class VibePalette {
@@ -71,6 +105,35 @@ class VibePalette {
     muted:        Color(0xFF6B5B95),
     darkMuted:    Color(0xFF1E1333),
   );
+
+  // Synthesize a full 5-swatch palette from a single dominant color.
+  // Used by fromBlurHash() to produce an instant-bootstrap palette before
+  // the real palette is extracted.
+  factory VibePalette.fromDominantColor(Color dominant) {
+    final hsl = HSLColor.fromColor(dominant);
+    return VibePalette(
+      vibrant:      hsl
+          .withSaturation(hsl.saturation.clamp(0.30, 1.0))
+          .withLightness(hsl.lightness.clamp(0.35, 0.65))
+          .toColor(),
+      lightVibrant: hsl
+          .withSaturation(hsl.saturation.clamp(0.20, 0.90))
+          .withLightness((hsl.lightness + 0.20).clamp(0.50, 0.85))
+          .toColor(),
+      darkVibrant:  hsl
+          .withSaturation(hsl.saturation.clamp(0.30, 1.0))
+          .withLightness((hsl.lightness - 0.20).clamp(0.08, 0.35))
+          .toColor(),
+      muted:        hsl
+          .withSaturation((hsl.saturation * 0.60).clamp(0.05, 0.50))
+          .withLightness(hsl.lightness.clamp(0.30, 0.60))
+          .toColor(),
+      darkMuted:    hsl
+          .withSaturation((hsl.saturation * 0.50).clamp(0.04, 0.40))
+          .withLightness((hsl.lightness - 0.25).clamp(0.04, 0.30))
+          .toColor(),
+    );
+  }
 
   factory VibePalette.fromGenerator(PaletteGenerator g) {
     // Use the dominant color as fallback — gives each album its own natural
