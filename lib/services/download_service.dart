@@ -42,9 +42,12 @@ class DownloadService {
     ];
     for (final id in stale) {
       final data = _box?.get(id);
-      final path = data?['filePath'] as String?;
-      if (path != null) {
-        try { await File(path).delete(); } catch (_) {}
+      final stored = data?['filePath'] as String?;
+      if (stored != null) {
+        final path = _resolvePath(stored);
+        if (path != null) {
+          try { await File(path).delete(); } catch (_) {}
+        }
       }
       await _box?.delete(id);
     }
@@ -65,6 +68,18 @@ class DownloadService {
       'audio/aiff' || 'audio/x-aiff'               => '.aiff',
       _                                             => '.mp3',
     };
+  }
+
+  // Resolve a stored filePath value to a real filesystem path.
+  // Old builds stored absolute paths; new builds store just the filename.
+  // Both are handled here so existing downloads survive the migration.
+  // Returns null if _dir isn't initialised yet (init() not called).
+  static String? _resolvePath(String stored) {
+    if (_dir == null) return null;
+    final name = (stored.contains('/') || stored.contains('\\'))
+        ? stored.split(RegExp(r'[/\\]')).last   // legacy absolute → strip to filename
+        : stored;
+    return '$_dir/$name';
   }
 
   // ── Status helpers ────────────────────────────────────────────────────────
@@ -101,13 +116,13 @@ class DownloadService {
 
   // Synchronous lookup used by the audio handler at play time.
   static String? localPathSync(String id) {
-    final data = _box?.get(id);
-    return data != null ? data['filePath'] as String? : null;
+    final stored = _box?.get(id)?['filePath'] as String?;
+    return stored != null ? _resolvePath(stored) : null;
   }
 
   static VibeTrack trackFromData(Map<String, dynamic> data) => VibeTrack(
     id:          data['itemId']    as String,
-    url:         Uri.file(data['filePath'] as String).toString(),
+    url:         Uri.file(_resolvePath(data['filePath'] as String) ?? data['filePath'] as String).toString(),
     title:       data['title']    as String? ?? '',
     artist:      data['artist']   as String? ?? '',
     album:       data['album']    as String? ?? '',
@@ -133,11 +148,14 @@ class DownloadService {
   static Future<int> storageUsedBytes() async {
     int total = 0;
     for (final data in getDownloads()) {
-      final path = data['filePath'] as String?;
-      if (path != null) {
+      final stored = data['filePath'] as String?;
+      if (stored != null) {
         try {
-          final f = File(path);
-          if (await f.exists()) total += await f.length();
+          final path = _resolvePath(stored);
+          if (path != null) {
+            final f = File(path);
+            if (await f.exists()) total += await f.length();
+          }
         } catch (_) {}
       }
     }
@@ -223,7 +241,7 @@ class DownloadService {
         'artworkUrl':    track.artworkUrl,
         'colorUrl':      track.colorUrl,
         'blurHash':          track.blurHash,
-        'filePath':          path,
+        'filePath':          path.split(RegExp(r'[/\\]')).last, // filename only
         'durationMicros':    track.duration.inMicroseconds,
         'normalizationGain': track.normalizationGain,
         'discNumber':    discNumber,
@@ -306,9 +324,12 @@ class DownloadService {
   static Future<void> deleteDownload(String id) async {
     final data = _box?.get(id);
     if (data != null) {
-      final path = data['filePath'] as String?;
-      if (path != null) {
-        try { await File(path).delete(); } catch (_) {}
+      final stored = data['filePath'] as String?;
+      if (stored != null) {
+        final path = _resolvePath(stored);
+        if (path != null) {
+          try { await File(path).delete(); } catch (_) {}
+        }
       }
     }
     await _box?.delete(id);
