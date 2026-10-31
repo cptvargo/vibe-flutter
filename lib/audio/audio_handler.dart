@@ -1051,7 +1051,9 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_loopMode == LoopMode.one) return _queueIdx;
     final next = _queueIdx + 1;
     if (next >= _queue.length) {
-      return _loopMode == LoopMode.all ? 0 : null;
+      // repeat-all on a 1-track queue would loop the same track forever —
+      // stop instead (same as repeat-none). Use repeat-one to loop a single.
+      return (_loopMode == LoopMode.all && _queue.length > 1) ? 0 : null;
     }
     return next;
   }
