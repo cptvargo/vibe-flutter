@@ -929,6 +929,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _userPaused = true;
     _preloaded  = false;
     _cancelGap(); // gap is an auto-advance — explicit pause cancels it
+    await _commitCrossfadeIfActive();
     await _primary.pause();
     // Save immediately on pause so On Deck / Jump Back In update without
     // waiting for the next periodic tick.
@@ -938,8 +939,27 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   // Pause due to a system/output event (headphone unplug, BT disconnect).
   // Does NOT set _userPaused so BT reconnect can still auto-resume.
   Future<void> systemPause() async {
+    await _commitCrossfadeIfActive();
     await _primary.pause();
     _saveAlbumSession(_primary.position);
+  }
+
+  // During a crossfade the incoming track is on _secondary. If the user
+  // pauses (or a system event pauses) mid-crossfade we commit to the incoming
+  // track — stop the fading-out old primary, swap roles, rewire streams —
+  // so that the subsequent _primary.pause() and any later play() operate on
+  // the right track. Without this, only _primary (old, fading out) is paused
+  // and _secondary (new, audible) keeps playing.
+  Future<void> _commitCrossfadeIfActive() async {
+    if (!_crossfading) return;
+    _fadeTimer?.cancel();
+    _fadeTimer   = null;
+    _crossfading = false;
+    _preloaded   = false;
+    try { await _primary.stop(); } catch (_) {}
+    try { await _primary.setVolume(1.0); } catch (_) {}
+    _aIsPrimary = !_aIsPrimary; // secondary (new track) becomes primary
+    _wirePrimary();
   }
 
   @override
