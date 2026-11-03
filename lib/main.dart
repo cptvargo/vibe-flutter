@@ -73,9 +73,11 @@ Future<void> main() async {
       androidNotificationChannelName: 'Vibe',
       androidNotificationOngoing:     false,
       androidStopForegroundOnPause:   true,
-      // Android needs Flutter to pre-fetch artwork for the notification; iOS
-      // downloads it natively from artUri — preloadArtwork on iOS breaks that.
-      preloadArtwork:    Platform.isAndroid,
+      // audio_service's iOS native layer only sets MPMediaItemArtwork when
+      // extras['artCacheFile'] is present — a temp file written by Flutter's
+      // pre-fetch. Without preloadArtwork:true on iOS that key is never set
+      // and the lock screen shows no artwork.
+      preloadArtwork:    true,
       artDownscaleWidth:  512,
       artDownscaleHeight: 512,
       // Brand tint for the notification header and action icons.
