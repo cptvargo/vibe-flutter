@@ -48,12 +48,13 @@ class _VibeOutSectionState extends ConsumerState<VibeOutSection> {
     super.dispose();
   }
 
-  Future<void> _playAll() async {
+  Future<void> _shuffleAll() async {
     if (_tracks.isEmpty || !mounted) return;
+    final shuffled = List.of(_tracks)..shuffle();
     ref.read(playerOpenProvider.notifier).state = true;
     context.push('/player');
     await ref.read(audioHandlerProvider).playTracks(
-      List.of(_tracks),
+      shuffled,
       playbackContext: 'vibe_out',
     );
   }
@@ -92,7 +93,7 @@ class _VibeOutSectionState extends ConsumerState<VibeOutSection> {
                 ),
               ),
               GestureDetector(
-                onTap: _playAll,
+                onTap: _shuffleAll,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
@@ -103,11 +104,11 @@ class _VibeOutSectionState extends ConsumerState<VibeOutSection> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.play_arrow_rounded,
+                      Icon(Icons.shuffle_rounded,
                           color: theme.accentBright, size: 16),
                       const SizedBox(width: 4),
                       Text(
-                        'Play All',
+                        'Shuffle All',
                         style: TextStyle(
                           color:      theme.accentBright,
                           fontSize:   13,
