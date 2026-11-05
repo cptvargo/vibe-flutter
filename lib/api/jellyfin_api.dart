@@ -422,7 +422,8 @@ class JellyfinApi {
   static Future<Map<String, dynamic>> getPlaylists() =>
       _get('/Users/$_user/Items?IncludeItemTypes=Playlist&Recursive=true'
           '&Fields=PrimaryImageAspectRatio,ChildCount,ImageTags'
-          '&SortBy=SortName&SortOrder=Ascending');
+          '&SortBy=SortName&SortOrder=Ascending'
+          '&OwnerId=$_user');
 
   static Future<Map<String, dynamic>> createPlaylist(String name) async {
     final res = await http.post(
