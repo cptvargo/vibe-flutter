@@ -50,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   bool _codeChecking = false;
   bool _codeValid    = false;
+  Map<String, dynamic>? _inviteData;
 
   late final AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
@@ -93,9 +94,10 @@ class _LoginScreenState extends State<LoginScreen>
     _fadeCtrl.reverse().then((_) async {
       if (!mounted) return;
       setState(() {
-        _mode  = mode;
-        _error = null;
-        _codeValid = false;
+        _mode       = mode;
+        _error      = null;
+        _codeValid  = false;
+        _inviteData = null;
         _codeCtrl.clear();
         _jellyfinUserCtrl.clear();
         _jellyfinPassCtrl.clear();
@@ -230,10 +232,11 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) setState(() {
         _codeChecking = false;
         _codeValid    = data != null;
+        _inviteData   = data;
         _error = data == null ? 'Invalid or expired invite code.' : null;
       });
     } catch (_) {
-      if (mounted) setState(() { _codeChecking = false; _codeValid = false; });
+      if (mounted) setState(() { _codeChecking = false; _codeValid = false; _inviteData = null; });
     }
   }
 
@@ -332,12 +335,16 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _joinFriendsLibrary() async {
-    if (!_codeValid) { _setError('Enter a valid invite code first.'); return; }
+    if (!_codeValid || _inviteData == null) { _setError('Enter a valid invite code first.'); return; }
     if (_jellyfinUserCtrl.text.trim().isEmpty) { _setError('Enter your Jellyfin username.'); return; }
     if (_jellyfinPassCtrl.text.isEmpty) { _setError('Enter your Jellyfin password.'); return; }
+    if (_nameCtrl.text.trim().isEmpty) { _setError('Enter your name.'); return; }
+    if (_emailCtrl.text.trim().isEmpty) { _setError('Enter your email.'); return; }
+    if (_vibePassCtrl.text.isEmpty) { _setError('Enter a ViBE password.'); return; }
 
     setState(() { _loading = true; _error = null; });
     try {
+      // 1. Create Jellyfin account on the owner's server
       final result = await AuthService.createJellyfinAccountForInvite(
         inviteCode: _codeCtrl.text.trim(),
         username:   _jellyfinUserCtrl.text.trim(),
@@ -346,6 +353,22 @@ class _LoginScreenState extends State<LoginScreen>
       final serverUrl = result['server_url'] as String;
       final token     = result['jellyfin_token'] as String;
       final userId    = result['jellyfin_user_id'] as String;
+
+      // 2. Create ViBE (Supabase) account linked to the inviting server
+      final res = await AuthService.signUpWithInviteCode(
+        email:          _emailCtrl.text.trim(),
+        password:       _vibePassCtrl.text,
+        displayName:    _nameCtrl.text.trim(),
+        inviteData:     _inviteData!,
+        jellyfinToken:  token,
+        jellyfinUserId: userId,
+      );
+      if (res.user == null) {
+        _setError('Could not create your ViBE account. Try a different email.');
+        return;
+      }
+
+      // 3. Save Jellyfin credentials to Hive, mark account as set up, and connect
       await JellyfinConfig.save(
         serverUrl: serverUrl,
         apiKey:    token,
@@ -353,6 +376,8 @@ class _LoginScreenState extends State<LoginScreen>
         vibeLib:   VibeConfig.vibeLibrary,
         aiLib:     VibeConfig.aiLibrary,
       );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('vibe_has_setup', true);
       connectionNotifier.connect();
     } on Exception catch (e) {
       if (mounted) _setError(e.toString().replaceAll(RegExp(r'^Exception: '), ''));
@@ -548,6 +573,34 @@ class _LoginScreenState extends State<LoginScreen>
               suffix: _ObscureToggle(
                 obscure: _jellyfinObscure,
                 onTap: () => setState(() => _jellyfinObscure = !_jellyfinObscure),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _SectionLabel(icon: Icons.lock_outline, label: 'Create your ViBE account'),
+            const SizedBox(height: 4),
+            const Text(
+              'Your ViBE account lets you sign in from any device.',
+              style: TextStyle(fontSize: 11, color: _kTextDim),
+            ),
+            const SizedBox(height: 12),
+            _Field(
+              controller: _nameCtrl,
+              label: 'Your name',
+            ),
+            const SizedBox(height: 12),
+            _Field(
+              controller: _emailCtrl,
+              label: 'Email',
+              keyboard: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 12),
+            _Field(
+              controller: _vibePassCtrl,
+              label: 'ViBE password',
+              obscure: _vibeObscure,
+              suffix: _ObscureToggle(
+                obscure: _vibeObscure,
+                onTap: () => setState(() => _vibeObscure = !_vibeObscure),
               ),
             ),
           ],

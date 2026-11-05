@@ -58,10 +58,11 @@ class AuthService {
     return res;
   }
 
-  // Update profile fields
+  // Update profile fields — upsert so invited users without a profile row
+  // still get their changes saved (update silently no-ops on missing rows).
   static Future<void> updateProfile(Map<String, dynamic> data) async {
     if (user == null) return;
-    await supabase.from('profiles').update(data).eq('id', user!.id);
+    await supabase.from('profiles').upsert({'id': user!.id, ...data});
   }
 
   // Validate an invite code via SECURITY DEFINER function
