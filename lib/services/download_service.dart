@@ -187,7 +187,7 @@ class DownloadService {
       final ext = _extForContentType(res.headers.value('content-type'));
       path = '${_dir!}/${track.id}$ext';
 
-      final total    = res.contentLength;
+      final total    = res.contentLength; // -1 when server uses chunked encoding (transcoded)
       int   received = 0;
 
       final sink = File(path).openWrite();
@@ -198,6 +198,15 @@ class DownloadService {
         if (total > 0) {
           final p = received / total;
           if (p - lastNotified >= 0.01 || p >= 1.0) {
+            lastNotified = p;
+            _active[track.id] = p;
+            _onChange.add(null);
+          }
+        } else {
+          // Transcoded stream: no Content-Length — pulse progress based on bytes
+          // received so the UI shows activity instead of staying frozen at 0%.
+          final p = (received / (10 * 1024 * 1024)).clamp(0.0, 0.95);
+          if (p - lastNotified >= 0.02) {
             lastNotified = p;
             _active[track.id] = p;
             _onChange.add(null);

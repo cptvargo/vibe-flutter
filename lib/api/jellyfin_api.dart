@@ -55,8 +55,14 @@ class JellyfinApi {
   static String streamUrl(String itemId) =>
       '$_base/Audio/$itemId/stream?static=true&api_key=$_key&UserId=$_user&Container=m4a,mp3,flac,wav,aac';
 
+  // Downloads transcode to AAC 320 kbps instead of serving the raw file.
+  // static=true would pull lossless FLAC/WAV originals (30–50 MB/track);
+  // capping at 320 k gives ~90% size reduction with no audible difference.
   static String downloadUrl(String itemId) =>
-      '$_base/Audio/$itemId/stream?static=true&api_key=$_key&UserId=$_user&Container=m4a,mp3,flac,wav,aac';
+      '$_base/Audio/$itemId/stream?api_key=$_key&UserId=$_user'
+      '&MaxStreamingBitrate=320000&AudioCodec=aac'
+      '&TranscodingContainer=m4a&TranscodingProtocol=http'
+      '&Container=m4a,aac,mp3';
 
   // Auth header value used by raw HttpClient callers (e.g. DownloadService).
   static String get authHeader =>
