@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../providers.dart';
@@ -203,12 +204,40 @@ class PlaylistSheet extends ConsumerStatefulWidget {
 
 class _PlaylistSheetState extends ConsumerState<PlaylistSheet> {
   List<Map<String, dynamic>> _items = [];
-  bool _loading = true;
+  bool _loading        = true;
+  bool _uploadingImage = false;
+  // Local override so the cover refreshes immediately after upload without
+  // waiting for the parent list to reload from Jellyfin.
+  String? _localImageTag;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _uploadImage() async {
+    final picker = ImagePicker();
+    final file   = await picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (file == null || !mounted) return;
+    setState(() => _uploadingImage = true);
+    try {
+      final bytes = await file.readAsBytes();
+      final mime  = file.mimeType
+          ?? (file.path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
+      await JellyfinApi.uploadPlaylistImage(
+          widget.playlist['Id'] as String, bytes, mime);
+      // Force a fresh image URL by busting the tag cache with a timestamp.
+      setState(() => _localImageTag = DateTime.now().millisecondsSinceEpoch.toString());
+      widget.onReload();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not upload image: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingImage = false);
+    }
   }
 
   Future<void> _load() async {
@@ -291,6 +320,65 @@ class _PlaylistSheetState extends ConsumerState<PlaylistSheet> {
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
               child: Row(
                 children: [
+                  // Tappable cover image with camera overlay
+                  GestureDetector(
+                    onTap: _uploadingImage ? null : _uploadImage,
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: _uploadingImage
+                              ? Container(
+                                  width: 72, height: 72,
+                                  color: theme.surface,
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 24, height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: theme.accentBright,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : CachedNetworkImage(
+                                  imageUrl: JellyfinApi.imageUrl(
+                                    widget.playlist['Id'] as String,
+                                    size: 160,
+                                    tag: _localImageTag
+                                        ?? (widget.playlist['ImageTags']
+                                                as Map?)?['Primary'] as String?,
+                                  ),
+                                  width: 72, height: 72,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, _) => Container(
+                                      width: 72, height: 72, color: theme.surface),
+                                  errorWidget: (_, _, _) => Container(
+                                    width: 72, height: 72,
+                                    color: theme.surface,
+                                    child: Icon(Icons.queue_music_rounded,
+                                        color: theme.textFaint, size: 30),
+                                  ),
+                                ),
+                        ),
+                        // Camera badge at bottom-right
+                        if (!_uploadingImage)
+                          Positioned(
+                            bottom: 4, right: 4,
+                            child: Container(
+                              width: 22, height: 22,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withAlpha(0xBB),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.camera_alt_rounded,
+                                  color: Colors.white, size: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
