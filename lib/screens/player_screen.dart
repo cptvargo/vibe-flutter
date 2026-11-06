@@ -778,66 +778,7 @@ class _ContentState extends ConsumerState<_Content> {
                 children: [
                   Row(
                     children: [
-                      // DJ mode toggle — opposite the fire button, keeps title centered
-                      Consumer(
-                        builder: (ctx, ref, _) {
-                          final djOn = ref.watch(djModeProvider);
-                          return IconButton(
-                            icon: Icon(
-                              Icons.graphic_eq,
-                              color: djOn
-                                  ? ambient.waveformActive
-                                  : Colors.white.withAlpha(0x55),
-                              size: 24,
-                            ),
-                            onPressed: () {
-                              ref.read(djModeProvider.notifier).toggle();
-                              final nowOn = !djOn;
-                              ScaffoldMessenger.of(ctx).clearSnackBars();
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                SnackBar(
-                                  content: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        nowOn
-                                            ? Icons.graphic_eq
-                                            : Icons.music_note_rounded,
-                                        color: Colors.white,
-                                        size: 16,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        nowOn
-                                            ? 'DJ Mode  ·  Crossfade'
-                                            : 'Gap Mode  ·  2s between tracks',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          letterSpacing: 0.2,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  backgroundColor:
-                                      Colors.black.withAlpha(0xCC),
-                                  duration: const Duration(seconds: 2),
-                                  behavior: SnackBarBehavior.floating,
-                                  margin: const EdgeInsets.only(
-                                    bottom: 24,
-                                    left: 32,
-                                    right: 32,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                  elevation: 0,
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
+                      const SizedBox(width: 48),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -2252,7 +2193,6 @@ class _LandscapeControls extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isFired = ref.watch(fireMixProvider.select((list) => list.any((t) => t.id == item.id)));
-    final djOn    = ref.watch(djModeProvider);
 
     return StreamBuilder<PlaybackState>(
       stream: handler.playbackState,
@@ -2274,46 +2214,10 @@ class _LandscapeControls extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Title row: DJ icon | title + artist | fire icon
+                  // Title row: spacer | title + artist | fire icon
                   Row(
                     children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.graphic_eq,
-                          color: djOn
-                              ? ambient.waveformActive
-                              : Colors.white.withAlpha(0x55),
-                          size: 22,
-                        ),
-                        onPressed: () {
-                          ref.read(djModeProvider.notifier).toggle();
-                          final nowOn = !djOn;
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  nowOn ? Icons.graphic_eq : Icons.music_note_rounded,
-                                  color: Colors.white, size: 16,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  nowOn ? 'DJ Mode  ·  Crossfade' : 'Gap Mode  ·  2s between tracks',
-                                  style: const TextStyle(color: Colors.white, fontSize: 13,
-                                      letterSpacing: 0.2),
-                                ),
-                              ],
-                            ),
-                            backgroundColor: Colors.black.withAlpha(0xCC),
-                            duration: const Duration(seconds: 2),
-                            behavior: SnackBarBehavior.floating,
-                            margin: const EdgeInsets.only(bottom: 24, left: 32, right: 32),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            elevation: 0,
-                          ));
-                        },
-                      ),
+                      const SizedBox(width: 48),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,

@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import '../providers.dart';
 import '../providers/connection_notifier.dart';
+import '../providers/dj_mode_notifier.dart';
 import '../services/auth_service.dart';
 import '../theme/vibe_theme.dart';
 
@@ -95,6 +96,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: 'Invite Codes',
                   children: [
                     _InviteTile(theme: theme, server: _server),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _Section(
+                  theme: theme,
+                  title: 'Playback',
+                  children: [
+                    _SwitchTile(
+                      theme: theme,
+                      icon: Icons.graphic_eq,
+                      label: 'Crossfade',
+                      sublabel: 'Smooth blend between tracks',
+                      value: ref.watch(djModeProvider),
+                      onChanged: (_) => ref.read(djModeProvider.notifier).toggle(),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -531,6 +547,58 @@ class _ActionTile extends StatelessWidget {
             Expanded(child: Text(label,
               style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w500))),
             trailing ?? Icon(Icons.chevron_right, size: 18, color: theme.textFaint),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SwitchTile extends StatelessWidget {
+  const _SwitchTile({
+    required this.theme,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.sublabel,
+  });
+  final VibeTheme theme;
+  final IconData icon;
+  final String label;
+  final String? sublabel;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: theme.accentBright.withAlpha(0xAA)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                    style: TextStyle(fontSize: 14, color: theme.textColor, fontWeight: FontWeight.w500)),
+                  if (sublabel != null)
+                    Text(sublabel!,
+                      style: TextStyle(fontSize: 12, color: theme.textFaint)),
+                ],
+              ),
+            ),
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeColor: theme.accentBright,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
           ],
         ),
       ),
