@@ -538,9 +538,6 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
-// ── Switch tile ───────────────────────────────────────────────────────────────
-
-
 // ── Edit name tile ────────────────────────────────────────────────────────────
 
 class _EditNameTile extends StatelessWidget {

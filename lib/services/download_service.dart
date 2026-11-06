@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import '../api/jellyfin_api.dart';
@@ -175,7 +176,13 @@ class DownloadService {
     // path is determined after we know the Content-Type of the response.
     String? path;
     try {
-      final req = await _httpClient.getUrl(Uri.parse(JellyfinApi.downloadUrl(track.id)));
+      // Auto-detect connection: WiFi/ethernet → 320 kbps AAC, cellular → 192 kbps AAC
+      final connectivity = await Connectivity().checkConnectivity();
+      final isWifi = connectivity.contains(ConnectivityResult.wifi) ||
+                     connectivity.contains(ConnectivityResult.ethernet);
+      final bitrateKbps = isWifi ? 320 : 192;
+      final req = await _httpClient.getUrl(
+          Uri.parse(JellyfinApi.downloadUrl(track.id, bitrateKbps: bitrateKbps)));
       req.headers.add('X-Emby-Authorization', JellyfinApi.authHeader);
       final res = await req.close();
       if (res.statusCode != 200) {
