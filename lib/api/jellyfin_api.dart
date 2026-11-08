@@ -56,18 +56,17 @@ class JellyfinApi {
       '$_base/Audio/$itemId/stream?static=true&api_key=$_key&UserId=$_user&Container=m4a,mp3,flac,wav,aac';
 
   // bitrateKbps: null = serve original file (static=true, no transcode).
-  // Otherwise Jellyfin transcodes to AAC at that bitrate — prevents lossless
+  // Otherwise Jellyfin transcodes to MP3 at that bitrate — prevents lossless
   // originals (30–50 MB/track) from bloating offline storage.
+  // AAC/M4A transcoding returns 500 on this server (FFmpeg config), so MP3 is used.
   static String downloadUrl(String itemId, {int? bitrateKbps = 320}) {
     if (bitrateKbps == null) {
       return '$_base/Audio/$itemId/stream?static=true&api_key=$_key&UserId=$_user'
-             '&Container=m4a,mp3,flac,wav,aac';
+             '&Container=mp3,m4a,flac,wav,aac';
     }
     final bps = bitrateKbps * 1000;
     return '$_base/Audio/$itemId/stream?api_key=$_key&UserId=$_user'
-           '&MaxStreamingBitrate=$bps&AudioCodec=aac'
-           '&TranscodingContainer=m4a&TranscodingProtocol=http'
-           '&Container=m4a,aac,mp3';
+           '&MaxStreamingBitrate=$bps&AudioCodec=mp3&Container=mp3,aac,m4a';
   }
 
   // Auth header value used by raw HttpClient callers (e.g. DownloadService).
