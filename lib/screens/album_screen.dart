@@ -37,6 +37,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   bool                         _loading        = true;
   VibeTheme?                   _albumTheme;
   String?                      _artistId;
+  String?                      _imageTag;
   List<Map<String, dynamic>>   _similarArtists = [];
   AlbumSession?                _session;
 
@@ -45,7 +46,17 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     super.initState();
     _loadTracks();
     _extractPalette();
+    _loadImageTag();
     _session = OnDeckService.getSession(widget.albumId);
+  }
+
+  Future<void> _loadImageTag() async {
+    try {
+      final item = await JellyfinApi.getItem(widget.albumId);
+      final tags = item['ImageTags'] as Map<String, dynamic>?;
+      final tag  = tags?['Primary'] as String?;
+      if (tag != null && mounted) setState(() => _imageTag = tag);
+    } catch (_) {}
   }
 
   Future<void> _extractPalette() async {
@@ -144,7 +155,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _AlbumContextSheet(
-        artUrl:     JellyfinApi.imageUrl(widget.albumId, size: 200),
+        artUrl:     JellyfinApi.imageUrl(widget.albumId, size: 200, tag: _imageTag),
         albumName:  widget.albumName,
         artistName: artistName,
         artistId:   artistId,
@@ -156,7 +167,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   Widget build(BuildContext context) {
     final VibeTheme theme = _albumTheme ?? ref.watch(themeProvider);
     final screenW = MediaQuery.of(context).size.width;
-    final artUrl  = JellyfinApi.imageUrl(widget.albumId, size: 600);
+    final artUrl  = JellyfinApi.imageUrl(widget.albumId, size: 600, tag: _imageTag);
 
     // 16px margin each side — art feels wide but page never feels cramped
     const hPad   = 16.0;
