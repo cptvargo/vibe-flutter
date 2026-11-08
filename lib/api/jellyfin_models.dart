@@ -88,7 +88,11 @@ class VibeTrack {
     // often a feature artist on collaborative tracks, e.g. BagOnly on Forrest Frank albums).
     final artistId  = (j['AlbumArtistIds'] as List?)?.cast<String>().firstOrNull
                       ?? artistItems?.firstOrNull?['Id'] as String?;
-    final imageTag  = (j['ImageTags'] as Map?)?['Primary'] as String?;
+    // AlbumPrimaryImageTag is the album's current artwork tag — prefer it over
+    // the track's own ImageTags.Primary (usually empty for audio files) so that
+    // CachedNetworkImage cache-busts when album artwork changes.
+    final albumImageTag = j['AlbumPrimaryImageTag'] as String?;
+    final imageTag      = albumImageTag ?? (j['ImageTags'] as Map?)?['Primary'] as String?;
 
     return VibeTrack(
       id:          j['Id'] as String,
