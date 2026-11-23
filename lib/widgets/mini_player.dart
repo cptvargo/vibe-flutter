@@ -99,7 +99,7 @@ class _Bar extends StatelessWidget {
                                 horizontal: 16, vertical: 10),
                             child: Row(
                               children: [
-                                _ArtThumb(artUri: item.artUri, surface: theme.surface),
+                                _ArtThumb(artUri: Uri.tryParse((item.extras?['artworkHttpsUrl'] as String?) ?? item.artUri?.toString() ?? ''), surface: theme.surface),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
