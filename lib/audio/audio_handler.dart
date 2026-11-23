@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/jellyfin_models.dart';
 import '../api/jellyfin_api.dart';
@@ -174,6 +175,11 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // Deduplicates Jellyfin 10-second progress pings.
   int _lastReportedSec = -1;
+
+  // Lock-screen artwork cache: HTTPS URL → local temp file path.
+  // Once artwork is downloaded to a local file, the MediaItem uses Uri.file()
+  // so iOS lock screen always has instant access — no network race condition.
+  final Map<String, String> _artCache = {};
 
   VibeAudioHandler() {
     _wirePrimary();
@@ -608,6 +614,55 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _gapTargetIdx = null;
   }
 
+  // ── Lock-screen artwork prefetch ─────────────────────────────────────────
+  // Downloads the current track's artwork to a temp file and updates the
+  // MediaItem with a file:// URI so iOS lock screen never hits a network race.
+  Future<void> _prefetchArt(MediaItem item) async {
+    final httpsUrl = item.artUri?.toString() ?? '';
+    if (httpsUrl.isEmpty || httpsUrl.startsWith('file:')) return;
+
+    // If already cached, patch the MediaItem immediately.
+    final cached = _artCache[httpsUrl];
+    if (cached != null) {
+      _patchArtUri(item, cached);
+      return;
+    }
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final hash = httpsUrl.hashCode.abs();
+      final path = '${dir.path}/vibe_art_$hash.jpg';
+
+      if (!File(path).existsSync()) {
+        final client = HttpClient();
+        final req = await client.getUrl(Uri.parse(httpsUrl));
+        req.headers.add('X-Emby-Authorization', JellyfinApi.authHeader);
+        final res = await req.close();
+        if (res.statusCode != 200) return;
+        final sink = File(path).openWrite();
+        await res.pipe(sink);
+        client.close();
+      }
+
+      _artCache[httpsUrl] = path;
+      _patchArtUri(item, path);
+    } catch (_) {}
+  }
+
+  // Replace the artUri on the current MediaItem with a local file URI.
+  // No-op if the track has already changed.
+  void _patchArtUri(MediaItem item, String localPath) {
+    if (mediaItem.value?.id != item.id) return;
+    final updated = item.copyWith(artUri: Uri.file(localPath));
+    for (int i = 0; i < _queue.length; i++) {
+      if (_queue[i].id == item.id) {
+        _queue[i] = updated;
+        break;
+      }
+    }
+    mediaItem.add(updated);
+  }
+
   // ── Hard skip (immediate cut, no fade) ───────────────────────────────────
   Future<void> _hardSkipTo(int index) async {
     _naturalEndQueued = false; // skip supersedes any pending natural-end
@@ -625,6 +680,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _lastReportedSec = -1;
     final item = _queue[index];
     mediaItem.add(item);
+    _prefetchArt(item); // download to local file → patch artUri → no lock screen race
     _currentIdxCtrl.add(_queueIdx);
     _saveCurrentItem(item);
 
@@ -743,6 +799,7 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
 
       queue.add(List.unmodifiable(_queue));
       mediaItem.add(item);
+      _prefetchArt(item); // download to local file → patch artUri → no lock screen race
       _currentIdxCtrl.add(_queueIdx);
       _saveCurrentItem(item);
 
