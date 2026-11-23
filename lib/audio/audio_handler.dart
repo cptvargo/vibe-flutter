@@ -177,9 +177,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
   int _lastReportedSec = -1;
 
   // Lock-screen artwork cache: HTTPS URL → local temp file path.
-  // Once artwork is downloaded to a local file, the MediaItem uses Uri.file()
-  // so iOS lock screen always has instant access — no network race condition.
+  // Once artwork is downloaded to a local file, the lock-screen MediaItem uses
+  // Uri.file() so iOS has instant access — no network race condition.
+  // The _queue items ALWAYS keep the original HTTPS artUri so CachedNetworkImage
+  // in the player UI continues to work normally.
   final Map<String, String> _artCache = {};
+  String? _currentLocalArtPath; // most recent downloaded art for the current track
 
   VibeAudioHandler() {
     _wirePrimary();
@@ -243,7 +246,12 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
           final updated = old.copyWith(duration: dur);
           _queue[_queueIdx] = updated;
           queue.add(List.from(_queue));
-          mediaItem.add(updated);
+          // If artwork was already patched to a local file URI, preserve it so
+          // this duration update doesn't regress the lock screen back to HTTPS.
+          final localPath = _currentLocalArtPath;
+          mediaItem.add(localPath != null
+              ? updated.copyWith(artUri: Uri.file(localPath))
+              : updated);
         }
       }
     });
@@ -649,18 +657,13 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     } catch (_) {}
   }
 
-  // Replace the artUri on the current MediaItem with a local file URI.
-  // No-op if the track has already changed.
+  // Push an updated MediaItem to audio_service with a local file URI for the
+  // lock screen. The _queue item is intentionally NOT updated — the UI reads
+  // artUri from the queue via CachedNetworkImage which only handles HTTPS.
   void _patchArtUri(MediaItem item, String localPath) {
     if (mediaItem.value?.id != item.id) return;
-    final updated = item.copyWith(artUri: Uri.file(localPath));
-    for (int i = 0; i < _queue.length; i++) {
-      if (_queue[i].id == item.id) {
-        _queue[i] = updated;
-        break;
-      }
-    }
-    mediaItem.add(updated);
+    _currentLocalArtPath = localPath;
+    mediaItem.add(item.copyWith(artUri: Uri.file(localPath)));
   }
 
   // ── Hard skip (immediate cut, no fade) ───────────────────────────────────
@@ -676,8 +679,9 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
     _loading = true;
 
     _reportStopped();
-    _queueIdx        = index;
-    _lastReportedSec = -1;
+    _queueIdx           = index;
+    _lastReportedSec    = -1;
+    _currentLocalArtPath = null; // clear stale path before new track starts
     final item = _queue[index];
     mediaItem.add(item);
     _prefetchArt(item); // download to local file → patch artUri → no lock screen race
@@ -790,9 +794,10 @@ class VibeAudioHandler extends BaseAudioHandler with SeekHandler {
       _loading = true; // re-assert: _wirePrimary inside _cancelCrossfade may have cleared it
       _reportStopped();
 
-      _queue           = tracks.map((t) => _toMediaItem(t, playbackContext: playbackContext)).toList();
-      _queueIdx        = startIndex.clamp(0, _queue.length - 1);
-      _lastReportedSec = -1;
+      _queue                = tracks.map((t) => _toMediaItem(t, playbackContext: playbackContext)).toList();
+      _queueIdx             = startIndex.clamp(0, _queue.length - 1);
+      _lastReportedSec      = -1;
+      _currentLocalArtPath  = null; // clear stale path before new queue starts
 
       final item = _queue[_queueIdx];
       final url  = item.extras?['url'] as String? ?? '';
