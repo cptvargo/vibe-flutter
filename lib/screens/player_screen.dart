@@ -434,7 +434,7 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final artUrl = item.artUri?.toString();
+    final artUrl = (item.extras?['artworkHttpsUrl'] as String?) ?? item.artUri?.toString();
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -834,7 +834,7 @@ class _ContentState extends ConsumerState<_Content> {
                             artist:     item.artist ?? '',
                             album:      item.album ?? '',
                             albumId:    extras['albumId'] as String?,
-                            artworkUrl: item.artUri?.toString() ?? '',
+                            artworkUrl: (extras['artworkHttpsUrl'] as String?) ?? item.artUri?.toString() ?? '',
                             colorUrl:   extras['colorUrl'] as String? ?? '',
                             blurHash:   extras['blurHash'] as String?,
                             duration:   item.duration ?? Duration(
@@ -2014,7 +2014,7 @@ class _LandscapePlayerBodyState extends ConsumerState<_LandscapePlayerBody> {
 
   @override
   Widget build(BuildContext context) {
-    final artUrl = widget.item.artUri?.toString();
+    final artUrl = (widget.item.extras?['artworkHttpsUrl'] as String?) ?? widget.item.artUri?.toString();
 
     return TweenAnimationBuilder<AmbientTheme>(
       tween:    _AmbientTween(end: widget.ambient),
@@ -2266,7 +2266,7 @@ class _LandscapeControls extends ConsumerWidget {
                             artist:     item.artist ?? '',
                             album:      item.album ?? '',
                             albumId:    extras['albumId'] as String?,
-                            artworkUrl: item.artUri?.toString() ?? '',
+                            artworkUrl: (extras['artworkHttpsUrl'] as String?) ?? item.artUri?.toString() ?? '',
                             colorUrl:   extras['colorUrl'] as String? ?? '',
                             blurHash:   extras['blurHash'] as String?,
                             duration:   item.duration ?? Duration(

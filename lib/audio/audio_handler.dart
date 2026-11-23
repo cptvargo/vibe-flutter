@@ -45,6 +45,7 @@ MediaItem _toMediaItem(VibeTrack t, {String playbackContext = 'album'}) {
       'albumArtist':       (t.raw['AlbumArtist'] as String?)?.isNotEmpty == true
                                ? t.raw['AlbumArtist'] as String
                                : t.artist.split(' & ').first,
+      'artworkHttpsUrl':   t.artworkUrl,  // stable HTTPS URL for in-app CachedNetworkImage
       'colorUrl':          t.colorUrl,
       'blurHash':          t.blurHash,
       'durationMicros':    t.duration.inMicroseconds,
