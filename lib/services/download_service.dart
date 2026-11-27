@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import '../api/jellyfin_api.dart';
@@ -236,6 +237,10 @@ class DownloadService {
       // used chunked transfer and didn't set Content-Length).
       await _verifyAudioMagic(path, track.id);
 
+      // Pre-seed CachedNetworkImage's disk cache with the artwork so it's
+      // available offline without any widget changes.
+      await _cacheArtwork(track.artworkUrl);
+
       // Disc + track numbers come from Jellyfin metadata (raw), which is
       // populated when the track was fetched from the album screen.
       // fallbackPosition is only used when raw is empty (should never happen
@@ -295,6 +300,26 @@ class DownloadService {
       );
       await Future.wait(slots);
     });
+  }
+
+  // Downloads artwork and stores it in CachedNetworkImage's disk cache under
+  // the HTTPS URL key so widgets display it offline without any code changes.
+  static Future<void> _cacheArtwork(String artworkUrl) async {
+    if (artworkUrl.isEmpty) return;
+    try {
+      final client = HttpClient();
+      final req = await client.getUrl(Uri.parse(artworkUrl));
+      req.headers.add('X-Emby-Authorization', JellyfinApi.authHeader);
+      final res = await req.close();
+      if (res.statusCode != 200) return;
+      final bytes = await consolidateHttpClientResponseBytes(res);
+      client.close();
+      await DefaultCacheManager().putFile(
+        artworkUrl,
+        bytes,
+        fileExtension: 'jpg',
+      );
+    } catch (_) {}
   }
 
   // Reads the first 12 bytes of a downloaded file and checks for known audio

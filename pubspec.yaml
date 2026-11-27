@@ -27,6 +27,7 @@ dependencies:
   flutter_blurhash: ^0.9.1
 
   # ── HTTP + data ──────────────────────────────────────────────────────────────
+  flutter_cache_manager: ^3.3.0
   http: ^1.2.2
   shared_preferences: ^2.3.3
   path_provider: ^2.1.0
