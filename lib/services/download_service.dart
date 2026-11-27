@@ -252,6 +252,7 @@ class DownloadService {
         'itemId':        track.id,
         'title':         track.title,
         'artist':        track.artist,
+        'albumArtist':   track.raw['AlbumArtist'] as String? ?? track.artist,
         'album':         track.album,
         'albumId':       track.albumId,
         'artistId':      track.artistId,
