@@ -211,8 +211,3 @@ class CastPlugin: NSObject,
     }
 }
 
-// Silence the Cast SDK's default logging output in release builds.
-extension CastPlugin: GCKLoggerDelegate {
-    func logMessage(_ message: String, at level: GCKLoggerLevel,
-                    fromFunction function: String, location: String) {}
-}

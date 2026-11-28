@@ -2737,11 +2737,16 @@ class _CastSheet extends StatelessWidget {
                         ? null
                         : () async {
                             Navigator.pop(context);
-                            await castService.connectToDevice(device);
-                            // Pause local playback and load current track on Cast
                             final item = handler.mediaItem.value;
+                            final wasPlaying =
+                                handler.playbackState.value.playing;
+                            // If connection fails, restore playback.
+                            if (wasPlaying) {
+                              castService.resumeCallback = handler.play;
+                            }
+                            await castService.connectToDevice(device);
                             if (item != null) {
-                              handler.pause();
+                              if (wasPlaying) handler.pause();
                               await castService.loadMedia(item);
                             }
                           },
@@ -2760,7 +2765,13 @@ class _CastSheet extends StatelessWidget {
                   ),
                   onTap: () async {
                     Navigator.pop(context);
+                    final trackId = castService.loadedTrackId;
                     await castService.stopCasting();
+                    // Resume on the phone if we were casting the current track.
+                    if (trackId != null &&
+                        trackId == handler.mediaItem.value?.id) {
+                      handler.play();
+                    }
                   },
                 ),
               ],

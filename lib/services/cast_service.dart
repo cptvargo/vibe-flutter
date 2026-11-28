@@ -38,13 +38,18 @@ class CastService extends ChangeNotifier {
   CastDevice?      _current;
   StreamSubscription<dynamic>? _sub;
   String?          _loadedTrackId;
-  MediaItem?       _pendingItem; // queued while connecting; loaded on sessionStarted
+  MediaItem?       _pendingItem;    // queued while connecting; loaded on sessionStarted
+  VoidCallback?    _resumeCallback; // called if session fails, to undo a local pause
 
   CastState        get state          => _state;
   List<CastDevice> get devices        => _devices;
   CastDevice?      get current        => _current;
   bool             get isConnected    => _state == CastState.connected;
   String?          get loadedTrackId  => _loadedTrackId;
+
+  // Set before calling connectToDevice. Called automatically if the session
+  // fails, so local playback can be restored after an interrupted pause.
+  set resumeCallback(VoidCallback? cb) => _resumeCallback = cb;
 
   CastService() {
     _startListening();
@@ -85,6 +90,7 @@ class CastService extends ChangeNotifier {
           model: d['model'] as String? ?? '',
         );
         _state = CastState.connected;
+        _resumeCallback = null; // committed — no need to undo the local pause
         notifyListeners();
         // Load any media that was requested before the session was established.
         if (_pendingItem != null) {
@@ -93,10 +99,11 @@ class CastService extends ChangeNotifier {
           loadMedia(item);
         }
       case 'sessionEnded':
-        _current       = null;
-        _loadedTrackId = null;
-        _pendingItem   = null;
-        _state         = CastState.discovering;
+        _current        = null;
+        _loadedTrackId  = null;
+        _pendingItem    = null;
+        _resumeCallback = null; // session ended normally; don't undo a past pause
+        _state          = CastState.discovering;
         CastServer.stop();
         notifyListeners();
       case 'sessionFailed':
@@ -104,6 +111,8 @@ class CastService extends ChangeNotifier {
         _pendingItem = null;
         _state       = CastState.discovering;
         notifyListeners();
+        _resumeCallback?.call(); // restore local playback if we paused it
+        _resumeCallback = null;
     }
   }
 
@@ -185,10 +194,11 @@ class CastService extends ChangeNotifier {
   Future<void> stopCasting() async {
     try { await _ch.invokeMethod<void>('stopCasting'); } catch (_) {}
     await CastServer.stop();
-    _current       = null;
-    _loadedTrackId = null;
-    _pendingItem   = null;
-    _state         = CastState.discovering;
+    _current        = null;
+    _loadedTrackId  = null;
+    _pendingItem    = null;
+    _resumeCallback = null; // explicit user action — don't auto-resume
+    _state          = CastState.discovering;
     notifyListeners();
   }
 
