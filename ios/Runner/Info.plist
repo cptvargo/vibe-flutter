@@ -77,6 +77,14 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Google Cast device discovery over Bonjour / mDNS -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_googlecast._tcp</string>
+		<string>_CC1AD845._googlecast._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Vibe uses your local network to discover and connect to Chromecast and Google speaker devices for casting music.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Vibe uses audio session APIs for music playback. Microphone access is not used.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

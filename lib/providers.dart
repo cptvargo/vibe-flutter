@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api/jellyfin_models.dart';
 import 'audio/audio_handler.dart';
 import 'services/artist_mix_service.dart';
+import 'services/cast_service.dart';
 import 'services/fire_mix_service.dart';
 import 'services/preset_mix_service.dart';
 import 'theme/ambient_theme.dart';
@@ -100,4 +101,11 @@ final artistMixProvider =
 // Invalidate by calling PresetMixService.invalidate() then ref.invalidate(presetMixesProvider).
 final presetMixesProvider = FutureProvider<List<VibeMix>>((ref) {
   return PresetMixService.getMixes();
+});
+
+// Cast service — singleton; starts device discovery when created.
+final castServiceProvider = ChangeNotifierProvider<CastService>((ref) {
+  final svc = CastService();
+  ref.onDispose(svc.dispose);
+  return svc;
 });
