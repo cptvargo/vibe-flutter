@@ -13,6 +13,7 @@ import '../api/jellyfin_api.dart';
 import '../api/jellyfin_models.dart';
 import '../audio/audio_handler.dart';
 import '../providers.dart';
+import '../services/cast_service.dart';
 import '../theme/ambient_theme.dart';
 import '../theme/vibe_theme.dart';
 import '../widgets/add_to_playlist_sheet.dart';
@@ -718,7 +719,22 @@ class _ContentState extends ConsumerState<_Content> {
     return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
   }
 
+  void _showCastSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      useRootNavigator: false,
+      builder: (_) => _CastSheet(
+        castService: ref.read(castServiceProvider),
+        handler:     widget.handler,
+        theme:       widget.theme,
+        ambient:     widget.ambient,
+      ),
+    );
+  }
+
   Widget _buildTopBar(BuildContext context) {
+    final cast = ref.watch(castServiceProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
@@ -734,6 +750,19 @@ class _ContentState extends ConsumerState<_Content> {
                 ),
               ),
             ),
+          ),
+          IconButton(
+            icon: Icon(
+              cast.isConnected ? Icons.cast_connected : Icons.cast,
+              color: cast.isConnected
+                  ? widget.ambient.waveformActive
+                  : Colors.white.withAlpha(0xBB),
+              size: 22,
+            ),
+            onPressed: () => _showCastSheet(context),
+            tooltip: cast.isConnected
+                ? 'Casting to ${cast.current?.name ?? "device"}'
+                : 'Cast',
           ),
           IconButton(
             icon: Icon(Icons.more_horiz, color: Colors.white.withAlpha(0xBB)),
@@ -2101,14 +2130,46 @@ class _LandscapePlayerBodyState extends ConsumerState<_LandscapePlayerBody> {
                                 onPressed: () => Navigator.maybePop(context),
                               ),
                             ),
-                            // Three-dots options (top-right)
+                            // Cast + three-dots (top-right)
                             Positioned(
                               top: 4, right: 4,
-                              child: IconButton(
-                                icon: Icon(Icons.more_horiz,
-                                    color: Colors.white.withAlpha(0xBB), size: 24),
-                                onPressed: () => _showTrackOptions(
-                                    context, ref, widget.item, widget.theme),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListenableBuilder(
+                                    listenable: ref.watch(castServiceProvider),
+                                    builder: (_, child) {
+                                      final cast = ref.watch(castServiceProvider);
+                                      return IconButton(
+                                        icon: Icon(
+                                          cast.isConnected
+                                              ? Icons.cast_connected
+                                              : Icons.cast,
+                                          color: cast.isConnected
+                                              ? animAmbient.waveformActive
+                                              : Colors.white.withAlpha(0xBB),
+                                          size: 22,
+                                        ),
+                                        onPressed: () => showModalBottomSheet<void>(
+                                          context: context,
+                                          backgroundColor: Colors.transparent,
+                                          builder: (_) => _CastSheet(
+                                            castService: cast,
+                                            handler:     widget.handler,
+                                            theme:       widget.theme,
+                                            ambient:     animAmbient,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.more_horiz,
+                                        color: Colors.white.withAlpha(0xBB), size: 24),
+                                    onPressed: () => _showTrackOptions(
+                                        context, ref, widget.item, widget.theme),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -2556,6 +2617,160 @@ class _LandscapeQueuePanel extends StatelessWidget {
               ],
             );
           },
+        );
+      },
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CAST SHEET
+// ════════════════════════════════════════════════════════════════════════════
+
+class _CastSheet extends StatelessWidget {
+  final CastService      castService;
+  final VibeAudioHandler handler;
+  final VibeTheme        theme;
+  final AmbientTheme     ambient;
+
+  const _CastSheet({
+    required this.castService,
+    required this.handler,
+    required this.theme,
+    required this.ambient,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+
+    return ListenableBuilder(
+      listenable: castService,
+      builder: (context, _) {
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── Handle ──────────────────────────────────────────────────
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(0x44),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+
+              // ── Header ──────────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.cast, color: ambient.waveformActive, size: 20),
+                    const SizedBox(width: 10),
+                    Text(
+                      castService.isConnected
+                          ? 'Casting to ${castService.current?.name ?? "device"}'
+                          : 'Cast to…',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Device list ──────────────────────────────────────────────
+              if (castService.devices.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: ambient.waveformActive,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
+                        'Looking for Cast devices on your network…',
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(0x99),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...castService.devices.map((device) {
+                  final isCurrent = castService.current?.id == device.id;
+                  return ListTile(
+                    leading: Icon(
+                      isCurrent ? Icons.cast_connected : Icons.cast,
+                      color: isCurrent
+                          ? ambient.waveformActive
+                          : Colors.white.withAlpha(0x88),
+                    ),
+                    title: Text(
+                      device.name,
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
+                    ),
+                    subtitle: device.model.isNotEmpty
+                        ? Text(
+                            device.model,
+                            style: TextStyle(
+                                color: Colors.white.withAlpha(0x55),
+                                fontSize: 12),
+                          )
+                        : null,
+                    trailing: isCurrent
+                        ? Icon(Icons.check_circle_rounded,
+                            color: ambient.waveformActive, size: 20)
+                        : null,
+                    onTap: isCurrent
+                        ? null
+                        : () async {
+                            Navigator.pop(context);
+                            await castService.connectToDevice(device);
+                            // Pause local playback and load current track on Cast
+                            final item = handler.mediaItem.value;
+                            if (item != null) {
+                              handler.pause();
+                              await castService.loadMedia(item);
+                            }
+                          },
+                  );
+                }),
+
+              // ── Now-casting row (connected state) ────────────────────────
+              if (castService.isConnected) ...[
+                const Divider(color: Colors.white12, height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: Icon(Icons.stop_circle_outlined,
+                      color: Colors.red.shade400),
+                  title: Text(
+                    'Stop Casting',
+                    style: TextStyle(color: Colors.red.shade400, fontSize: 15),
+                  ),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await castService.stopCasting();
+                  },
+                ),
+              ],
+
+              SizedBox(height: bottomInset + 12),
+            ],
+          ),
         );
       },
     );
