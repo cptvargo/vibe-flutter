@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Network access for Jellyfin API -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Cast SDK: mDNS discovery uses multicast packets; this lets the Cast
+         SDK acquire a WifiManager.MulticastLock so packets aren't filtered
+         by the WiFi driver. Without it, devices may never be discovered. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <!-- Keep CPU alive during playback -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Background playback notification (persistent controls) -->
