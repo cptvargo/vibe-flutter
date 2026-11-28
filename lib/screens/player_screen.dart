@@ -2136,33 +2136,30 @@ class _LandscapePlayerBodyState extends ConsumerState<_LandscapePlayerBody> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  ListenableBuilder(
-                                    listenable: ref.watch(castServiceProvider),
-                                    builder: (_, child) {
-                                      final cast = ref.watch(castServiceProvider);
-                                      return IconButton(
-                                        icon: Icon(
-                                          cast.isConnected
-                                              ? Icons.cast_connected
-                                              : Icons.cast,
-                                          color: cast.isConnected
-                                              ? animAmbient.waveformActive
-                                              : Colors.white.withAlpha(0xBB),
-                                          size: 22,
+                                  Consumer(builder: (context, ref, _) {
+                                    final cast = ref.watch(castServiceProvider);
+                                    return IconButton(
+                                      icon: Icon(
+                                        cast.isConnected
+                                            ? Icons.cast_connected
+                                            : Icons.cast,
+                                        color: cast.isConnected
+                                            ? animAmbient.waveformActive
+                                            : Colors.white.withAlpha(0xBB),
+                                        size: 22,
+                                      ),
+                                      onPressed: () => showModalBottomSheet<void>(
+                                        context: context,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (_) => _CastSheet(
+                                          castService: cast,
+                                          handler:     widget.handler,
+                                          theme:       widget.theme,
+                                          ambient:     animAmbient,
                                         ),
-                                        onPressed: () => showModalBottomSheet<void>(
-                                          context: context,
-                                          backgroundColor: Colors.transparent,
-                                          builder: (_) => _CastSheet(
-                                            castService: cast,
-                                            handler:     widget.handler,
-                                            theme:       widget.theme,
-                                            ambient:     animAmbient,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
+                                      ),
+                                    );
+                                  }),
                                   IconButton(
                                     icon: Icon(Icons.more_horiz,
                                         color: Colors.white.withAlpha(0xBB), size: 24),

@@ -38,6 +38,7 @@ class CastService extends ChangeNotifier {
   CastDevice?      _current;
   StreamSubscription<dynamic>? _sub;
   String?          _loadedTrackId;
+  MediaItem?       _pendingItem; // queued while connecting; loaded on sessionStarted
 
   CastState        get state          => _state;
   List<CastDevice> get devices        => _devices;
@@ -85,15 +86,23 @@ class CastService extends ChangeNotifier {
         );
         _state = CastState.connected;
         notifyListeners();
+        // Load any media that was requested before the session was established.
+        if (_pendingItem != null) {
+          final item = _pendingItem!;
+          _pendingItem = null;
+          loadMedia(item);
+        }
       case 'sessionEnded':
         _current       = null;
         _loadedTrackId = null;
+        _pendingItem   = null;
         _state         = CastState.discovering;
         CastServer.stop();
         notifyListeners();
       case 'sessionFailed':
-        _current = null;
-        _state   = CastState.discovering;
+        _current     = null;
+        _pendingItem = null;
+        _state       = CastState.discovering;
         notifyListeners();
     }
   }
@@ -117,10 +126,15 @@ class CastService extends ChangeNotifier {
   }
 
   // Load [item] on the active Cast session.
+  // If called while still connecting, the item is queued and loaded
+  // automatically once sessionStarted fires.
   // For offline tracks starts the local HTTP server and serves the file over
   // WiFi; for online tracks the Cast receiver fetches directly from Jellyfin.
   Future<void> loadMedia(MediaItem item) async {
-    if (!isConnected) return;
+    if (!isConnected) {
+      _pendingItem = item; // will be loaded on sessionStarted
+      return;
+    }
 
     final trackId   = item.id;
     final isOffline = DownloadService.isDownloaded(trackId);
@@ -173,6 +187,7 @@ class CastService extends ChangeNotifier {
     await CastServer.stop();
     _current       = null;
     _loadedTrackId = null;
+    _pendingItem   = null;
     _state         = CastState.discovering;
     notifyListeners();
   }
